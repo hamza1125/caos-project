@@ -1,68 +1,18 @@
-#  Command "Ignore (I n)" → energy -= 3*n
-
-.data
-msg_ignore: .asciiz "You ignored your pet. Energy decreased by 3*n.\n"
-msg_dead:   .asciiz "Error: energy <= 0. DP is dead!\n"
-msg_energy: .asciiz "Energy now: "
-newline:    .asciiz "\n"
-
-# test inputs (change these to try different cases)
-init_energy: .word 20      # try 20, then try small numbers like 5
-test_n:      .word 3       # n in I n (e.g., 3 → minus 9)
-
-.text
-.globl main
-main:
-    # load initial energy and n
-    la   $t0, init_energy
-    lw   $s0, 0($t0)        # $s0 = energy
-    la   $t0, test_n
-    lw   $a1, 0($t0)        # $a1 = n
-
-    # call ignore_proc
-    jal  ignore_proc
-
-    # print "Energy now: "
-    la   $a0, msg_energy
-    li   $v0, 4
-    syscall
-
-    # print energy value in $s0
-    move $a0, $s0
-    li   $v0, 1
-    syscall
-
-    # newline
-    la   $a0, newline
-    li   $v0, 4
-    syscall
-
-    # exit
-    li   $v0, 10
-    syscall
-
 # ignore_proc
 # in:  $s0 = current energy
 #      $a1 = n
 # out: $s0 = updated energy (capped at 0 if dead)
-# clobbers: $t0,$t1,$a0,$v0
+# clobbers: $t0,$t1
+
 ignore_proc:
     # t1 = 3*n  (portable: 3*n = (n<<1) + n)
+
     sll  $t1, $a1, 1        # t1 = n*2
     addu $t1, $t1, $a1      # t1 = n*3
-
     subu $s0, $s0, $t1      # energy -= 3*n
     blez $s0, pet_dead      # if energy <= 0 → dead
-
-    # print confirmation
-    la   $a0, msg_ignore
-    li   $v0, 4
-    syscall
-    jr   $ra
+    jr $ra
 
 pet_dead:
-    la   $a0, msg_dead
-    li   $v0, 4
-    syscall
     move $s0, $zero         # energy = 0
     jr   $ra
