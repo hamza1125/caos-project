@@ -1,32 +1,23 @@
 
-
 ############################################################
-#  TASK 4 – Entertain (E n) & Pet (P n) Commands
+#  TASK 4 – Entertain (E n) & Pet (P n) – Single-Pet Logic
 #  Author: Lele Li (COMP0068 Digital Pet Project 2025/26)
 #
-#  Function:
-#     Handle user commands that increase a pet’s energy by 2 × n
-#     and cap the value at the maximum energy level (MEL).
+#  Scope (this file only contains YOUR part):
+#    • One pet only (as per team decision).
+#    • Implements the shared logic for E/P commands:
+#        energy += 2 × n, then cap at MEL if exceeded.
+#    • Printing matches coursework wording.
 #
-#  Specification:
-#     • Two pets are supported: Pet A and Pet B.
-#     • Entertain (E n) and Pet (P n) share the same logic.
+#  Contract with main program:
+#    • State registers (set/maintained elsewhere):
+#         $s0 = current_energy
+#         $s1 = MEL  (maximum energy level)
+#    • Inputs for this routine:
+#         $a1 = n   (positive integer parsed by the command parser)
 #
-#  Register usage:
-#     $s0 = current_energy_petA
-#     $s1 = current_energy_petB
-#     $s2 = MEL  (maximum energy level)
-#     $a0 = pet ID (1 = A, 2 = B)
-#     $a1 = n   (value entered by user)
-#
-#  Output:
-#     Updates the correct pet’s energy.
-#     Prints “Energy increased by X units.”
-#     Prints a warning if the new energy exceeds MEL.
-#
-#  Typical call inside the main loop:
-#       li   $a0,1          # choose Pet A
-#       move $a1,$t0        # n from input
+#  Usage example in main loop (pseudo):
+#       move $a1, n
 #       jal  handle_EP
 #
 ############################################################
@@ -34,65 +25,44 @@
         .data
 msg_ep_add:   .asciiz "Energy increased by "
 msg_units:    .asciiz " units.\n"
-msg_capped:   .asciiz "Error, maximum energy level reached! Capped to the Max.\n"
-msg_petA:     .asciiz "[Pet A] "
-msg_petB:     .asciiz "[Pet B] "
+msg_cap:      .asciiz "Error, maximum energy level reached! Capped to the Max.\n"
 
         .text
         .globl handle_EP
 
 ############################################################
-#  handle_EP  –  main routine for Entertain / Pet commands
+# handle_EP – apply Entertain/Pet effect (+2×n with MEL cap)
+#   Input : $a1 = n
+#   State : $s0 = current_energy, $s1 = MEL
+#   Output: $s0 updated; prints gain and cap warning if capped
+#   Clobbers: $t0, $v0, $a0
 ############################################################
 handle_EP:
-        # 1️⃣  Compute delta = 2 × n  (left shift by 1 bit)
-        sll   $t0,$a1,1
+        # delta = 2 * n  (left shift by 1)
+        sll   $t0, $a1, 1
 
-        # 2️⃣  Select which pet to update
-        beq   $a0,1,petA_branch
-        beq   $a0,2,petB_branch
-        jr    $ra                 # invalid pet ID → return
+        # current_energy += delta
+        addu  $s0, $s0, $t0
 
-# ----------  PET A ----------------------------------------
-petA_branch:
-        addu  $s0,$s0,$t0         # current_energy += 2 × n
-        ble   $s0,$s2,ok_petA     # skip if ≤ MEL
-        move  $s0,$s2             # cap to MEL
-        li    $v0,4 ; la $a0,msg_capped ; syscall
-ok_petA:
-        li    $v0,4   ; la $a0,msg_petA ; syscall
-        jal   print_increase
-        jr    $ra
-
-# ----------  PET B ----------------------------------------
-petB_branch:
-        addu  $s1,$s1,$t0
-        ble   $s1,$s2,ok_petB
-        move  $s1,$s2
-        li    $v0,4 ; la $a0,msg_capped ; syscall
-ok_petB:
-        li    $v0,4   ; la $a0,msg_petB ; syscall
-        jal   print_increase
-        jr    $ra
-
-
-############################################################
-#  print_increase  –  shared sub-routine to print the gain
-#  Input:
-#     $t0 = delta (energy increase value)
-############################################################
-print_increase:
-        li    $v0,4
-        la    $a0,msg_ep_add
+        # if current_energy > MEL → cap and warn
+        ble   $s0, $s1, ep_print
+        move  $s0, $s1
+        li    $v0, 4
+        la    $a0, msg_cap
         syscall
 
-        li    $v0,1
-        move  $a0,$t0
+ep_print:
+        # "Energy increased by "
+        li    $v0, 4
+        la    $a0, msg_ep_add
         syscall
-
-        li    $v0,4
-        la    $a0,msg_units
+        # print delta
+        li    $v0, 1
+        move  $a0, $t0
+        syscall
+        # " units.\n"
+        li    $v0, 4
+        la    $a0, msg_units
         syscall
 
         jr    $ra
-
