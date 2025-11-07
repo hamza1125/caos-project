@@ -1,7 +1,7 @@
 
 ############################################################
 #  TASK 4 – Entertain (E n) & Pet (P n) – Single-Pet Logic
-#  Author: Lele Li (COMP0068 Digital Pet Project 2025/26)
+#  Author: Leo Li (COMP0068 Digital Pet Project 2025/26)
 #
 #  Scope (this file only contains YOUR part):
 #    • One pet only (as per team decision).
