@@ -1,36 +1,41 @@
 ############################################################
-#  TASK 4 – Entertain (E n) & Pet (P n) – Single-Pet Logic
-#  Author: Leo Li (COMP0068 Digital Pet Project 2025/26)
+#  POD4 – Entertain (E n) & Pet (P n) – Single-Pet Logic
+#  Author : Leo Li (COMP0068 Digital Pet Project 2025/26)
 #
-#  Group Conventions (agreed):
-#    • One pet only.
-#    • Command parameter n is passed in $a0.
-#    • Register layout:
+#  Team Conventions:
+#    • One pet only
+#    • Command parameter n is passed in $a0
+#    • Registers:
 #         $s0 = current energy
 #         $s1 = EDR (energy depletion rate)        ; unused here
 #         $s2 = MEL (maximum energy level)
 #         $s3 = IEL (initial energy level)         ; unused here
 #
 #  Effect of E n / P n:
-#    • Increase energy by (2 × n).
-#    • If energy exceeds MEL, cap to MEL and print a warning.
+#    • energy += (2 × n)
+#    • if energy > MEL: cap to MEL and print a warning
 #
 #  Call contract:
-#    • Input : $a0 = n (non-negative integer)
-#    • State : $s0..$s3 as above, set elsewhere (init/main)
-#    • Output: $s0 updated; prints messages
-#    • Clobbers: $t0, $t1, $v0, $a0
+#    • Input : $a0 = n  (non-negative integer from parser)
+#    • State : $s0..$s3 prepared elsewhere (init/main)
+#    • Output: $s0 updated; user messages printed
+#    • Clobbers: $t0, $t1, $t2, $v0, $a0
 #
-#  Usage from main loop (example):
-#      # parser extracts n into $a0
-#      jal handle_EP
-#
+#  Integration note:
+#    • This routine mirrors $s0 into RAM symbol `CurrentEnergy`
+#      so main_loop's per-second depletion (which uses RAM) stays in sync.
+#    • If `CurrentEnergy` is defined in another file, remove the
+#      duplicate definition below to avoid multiple-definition errors.
 ############################################################
 
         .data
-msg_ep_add:   .asciiz "Energy increased by "
-msg_units:    .asciiz " units.\n"
-msg_cap:      .asciiz "Error, maximum energy level reached! Capped to the Max.\n"
+# ---- Strings ------------------------------------------------
+msg_ep_add:     .asciiz "Energy increased by "
+msg_units:      .asciiz " units.\n"
+msg_cap:        .asciiz "Error, maximum energy level reached! Capped to the Max.\n"
+
+# ---- Shared state in RAM (remove if already defined elsewhere)
+CurrentEnergy:  .word   0
 
         .text
         .globl handle_EP
@@ -39,39 +44,47 @@ msg_cap:      .asciiz "Error, maximum energy level reached! Capped to the Max.\n
 # handle_EP – apply Entertain/Pet effect (+2×n with MEL cap)
 #   Input : $a0 = n
 #   State : $s0=current, $s1=EDR, $s2=MEL, $s3=IEL
-#   Notes : This routine does NOT modify $s1/$s2/$s3.
+#   Notes : Keeps RAM mirror `CurrentEnergy` up to date.
 ############################################################
 handle_EP:
-        # Preserve input n before any syscalls reuse $a0
+        # 1) Preserve n; syscalls also use $a0 so don't lose it.
         move  $t1, $a0              # t1 = n
 
-        # Compute delta = 2 * n (shift-left by 1)
+        # 2) delta = 2 * n  (shift-left by 1 is faster than mul)
         sll   $t0, $t1, 1           # t0 = delta
 
-        # current_energy += delta
+        # (Optional) If delta == 0, skip printing to avoid noise
+        beq   $t0, $zero, ep_update
+
+        # 3) current += delta
         addu  $s0, $s0, $t0
 
-        # If current_energy > MEL -> cap and warn
+        # 4) Cap to MEL if exceeded; warn once
         ble   $s0, $s2, ep_print
-        move  $s0, $s2
-        li    $v0, 4
+        move  $s0, $s2              # cap to MEL
+        li    $v0, 4                # print_string
         la    $a0, msg_cap
         syscall
 
 ep_print:
-        # Print: "Energy increased by "
+        # 5) Print "Energy increased by "
         li    $v0, 4
         la    $a0, msg_ep_add
         syscall
 
-        # Print the delta value
-        li    $v0, 1
+        #    then print the delta integer
+        li    $v0, 1                # print_int
         move  $a0, $t0
         syscall
 
-        # Print: " units.\n"
+        #    then " units.\n"
         li    $v0, 4
         la    $a0, msg_units
         syscall
+
+ep_update:
+        # 6) Mirror $s0 to RAM so the main loop sees the new value
+        la    $t2, CurrentEnergy
+        sw    $s0, 0($t2)
 
         jr    $ra
