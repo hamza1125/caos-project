@@ -23,7 +23,9 @@ init_success2: .asciiz " units/sec\n- MEL: "
 init_success3: .asciiz " units\n- IEL: "
 init_success4: .asciiz " units\n\nYour Digital Pet is alive! Current status:\n"
 wrong_type_input_num: .asciiz "Invalid input: Only digits are allowed in this field; Maximum value is a 2-digit number: "
-
+over_limit_num: .asciiz "The value cannot exceed "
+under_limit_num: .asciiz "The value cannot be less than 1"
+try_again: .asciiz ". Please try again: "
 wrong_type_Input_cmd: .asciiz "Invalid input. Follow this format for 'F/E/P/I n' (n<100) or 'R/Q'. Please try again: " 
 
 .text
@@ -45,18 +47,21 @@ gameInit:
 	la $a0, init_header
 	syscall
 	la $a0, edr
+	li $a1, -1
 	jal numberToMemory
 	move $s1, $v0
 	li $v0, 4
 	la $a0, init_mel
 	syscall
 	la $a0, mel
+	li $a1, -1
 	jal numberToMemory
 	move $s2, $v0
 	li $v0, 4
 	la $a0, init_iel
 	syscall
 	la $a0, iel
+	move $a1, $s2
 	jal numberToMemory
 	move $s3, $v0
 	move $s0, $v0
@@ -86,30 +91,56 @@ gameInit:
 	lw $ra, 4($sp)
 	addiu $sp, $sp, 8
 	jr $ra
-#input of a0 ass variable memory address
+#input of a0 = variable memory address, a1 max allowed value
 #output v0 as the final variable value, v1 as a flag if the variable was updated
 #reruns on the unsuccessful input
-# purpose: Read a line, parse number; if OK store to *(a0). Empty keeps old value; Error re-prompt.
+# purpose: Read a line, parse number; if OK store to *(a0). Empty keeps old value; If exceeds max or bad input re-prompt.
 # input:   a0 = &word_to_update
 # output:  v0 = final value in memory; v1 = 0 updated | 1 empty
-# clobbers: ra, s0 (saved/restored); uses input_buffer, READ_INPUT, parseNumber
+# clobbers: ra, s0, s1 (saved/restored); uses input_buffer, READ_INPUT, parseNumber
 # notes:   parseNumber enforces max 2 digits; message printed on error.
 numberToMemory:
-	addiu $sp, $sp, -8
-	sw $ra, 4($sp)
-	sw $s0, 0($sp)
+	addiu $sp, $sp, -16
+	sw $ra, 12($sp)
+	sw $s0, 8($sp)
+	sw $s1, 4($sp)
 	
 	move $s0, $a0
+	move $s1, $a1
 	NTM_read:
 		READ_INPUT (input_buffer, BUFFER_SIZE)
 		la $a0, input_buffer
 		jal parseNumber
 		beq $v1, 2, NTM_error
-		beqz $v1, NTM_number
+		beqz $v1, NTM_bounds
 		j NTM_skip
 	NTM_error:
 		li $v0, 4
 		la $a0, wrong_type_input_num
+		syscall
+		j NTM_read
+	NTM_bounds:
+		blez $v0, NTM_hitLowerLimit
+		bltz $s1, NTM_number
+		bgt $v0, $s1, NTM_hitUpperLimit
+		j NTM_number
+	NTM_hitLowerLimit:
+		li $v0, 4
+		la $a0, under_limit_num
+		syscall
+   		li $v0, 4
+		la $a0, try_again
+		syscall
+		j NTM_read
+	NTM_hitUpperLimit:
+		li $v0, 4
+		la $a0, over_limit_num
+		syscall
+		li    $v0, 1
+    		move  $a0, $s1
+   		syscall
+   		li $v0, 4
+		la $a0, try_again
 		syscall
 		j NTM_read
 	NTM_number:
@@ -121,9 +152,10 @@ numberToMemory:
 		li $v1, 1
 		j NTM_return
 	NTM_return:
-		lw $s0, 0($sp)
-		lw $ra, 4($sp)
-		addiu $sp, $sp, 8
+		lw $s1, 4($sp)
+		lw $s0, 8($sp)
+		lw $ra, 12($sp)
+		addiu $sp, $sp, 16
 		jr $ra
 
 # purpose: read and parse command "F/E/P/I <num>" or "R/Q".
@@ -268,13 +300,3 @@ parseLetter:
 		li $v1, 2
 	PL_return:
 		jr $ra
-		
-	
-	
-	
-	
-	
-	
-	
-	
-	
