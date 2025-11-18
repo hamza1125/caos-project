@@ -110,6 +110,7 @@ numberToMemory:
 	NTM_read:
 		READ_INPUT (input_buffer, BUFFER_SIZE)
 		la $a0, input_buffer
+		li, $a1, MAX_NUMERIC_VALUE
 		jal parseNumber
 		beq $v1, 2, NTM_error
 		beqz $v1, NTM_bounds
@@ -180,6 +181,7 @@ commandParser:
     		j CP_read
     	CP_letterOk:
     		move $s0, $v0
+    		li, $a1, MAX_NUMERIC_VALUE
     		jal parseNumber
     		li $t3, 2
     		beq $v1, $t3, CP_error
@@ -205,13 +207,14 @@ commandParser:
 		jr $ra
 
 # purpose: Parse [spaces]* DIGITS{1..MAX_NUMERIC_VALUE} [spaces]* then '\n' or '\0'.
-# input:   a0 = buf ptr (scans from here)
+# input:   a0 = buf ptr (scans from here) a1 = max digit count
 # output:  v0 = value; v1 = 0 ok | 1 empty | 2 error
 # notes:   advances a0 internally; accepts SPACE/TAB; rejects non-digits & >MAX_NUMERIC_VALUE digits.
 parseNumber:
 	li $v0, 0
 	li $v1, 1
 	li $t7, 0
+	move $t4, $a1
 	PN_skipLeadSpace:
 		lb $t0, 0($a0)
 		beqz $t0, PN_emptyCase 
@@ -231,7 +234,6 @@ parseNumber:
 		li $t6, 1
 		addi $t0, $t0, -48 
 		addu $v0, $v0, $t0
-		li $t4, MAX_NUMERIC_VALUE
 	PN_charCheckLoop:
     		addi $a0, $a0, 1
     		lb   $t0, 0($a0)
