@@ -206,10 +206,10 @@ commandParser:
 		addiu $sp, $sp, 8
 		jr $ra
 
-# purpose: Parse [spaces]* DIGITS{1..MAX_NUMERIC_VALUE} [spaces]* then '\n' or '\0'.
-# input:   a0 = buf ptr (scans from here) a1 = max digit count
+# purpose: Parse [spaces]* DIGITS [spaces]* then '\n' or '\0'.
+# input:   a0 = buf ptr (scans from here) a1 = max digits allowed
 # output:  v0 = value; v1 = 0 ok | 1 empty | 2 error
-# notes:   advances a0 internally; accepts SPACE/TAB; rejects non-digits & >MAX_NUMERIC_VALUE digits.
+# notes:   advances a0 internally; accepts SPACE/TAB; rejects non-digits 
 parseNumber:
 	li $v0, 0
 	li $v1, 1
