@@ -31,13 +31,73 @@ status_bar:      .asciiz "[######-----] Energy: "
 slash:           .asciiz "/"
 newline:         .asciiz "\n"
 command_prompt:  .asciiz "Enter a command (F, E, P, I, R, Q) > "
+deplete_msg: .asciiz "\nTime +1s...  Natural energy depletion!\n"
+
 .text
 .globl main
 main:
-jal gameInit
+    # (Application Startup & Initial Configuration)
+    jal gameInit        # sets $s1=EDR, $s2=MEL, $s0=current energy, $s3=IEL
 
-li $v0, 10
-syscall
+    # gameInit already printed initial status bar + command prompt.
+
+main_loop:
+    # Read a command line using commandParser
+    jal  commandParser          # v0 = letter, v1 = number or -1
+
+    move $t0, $v0               # t0 = command letter
+    move $t1, $v1               # t1 = number (unused for now)
+
+
+    # (We need to implement F/E/P/I/R/Q here); 
+
+    # Simulate passage of time (1 simulated second)
+    #    Natural energy depletion: subtract EDR (s1) from current energy (s0)
+    sub  $s0, $s0, $s1          # s0 = s0 - s1
+    bgez $s0, energy_ok         # if s0 >= 0, it's fine
+    move $s0, $zero             # if it went negative, clamp to 0
+energy_ok:
+
+    # Print "Time +1s...  Natural energy depletion!"
+    li  $v0, 4
+    la  $a0, deplete_msg
+    syscall
+
+    # Print status bar line: [######-----] Energy: current/max
+    li  $v0, 4
+    la  $a0, status_bar
+    syscall
+
+    li  $v0, 1
+    move $a0, $s0               
+    syscall
+
+    li  $v0, 4
+    la  $a0, slash
+    syscall
+
+    li  $v0, 1
+    move $a0, $s2               
+    syscall
+
+    li  $v0, 4
+    la  $a0, newline
+    syscall
+
+    li  $v0, 4
+    la  $a0, newline
+    syscall
+
+    # Print the command prompt
+    li  $v0, 4
+    la  $a0, command_prompt
+    syscall
+
+    # Loop back to wait for the next command
+    j   main_loop
+
+
+
 
 # purpose: Print startup prompts, read and store EDR/MEL/IEL via numberToMemory, echo chosen values, initialise to s registers.
 # output:  v0 = 0; s1 = EDR, s2 = MEL, s0 = IEL, s3 = IEL (copy); 
