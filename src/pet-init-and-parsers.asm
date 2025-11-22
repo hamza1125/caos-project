@@ -39,6 +39,8 @@ feed_units_nl: .asciiz " units.\n"
 quit_recog: .asciiz "\nCommand recognized: Quit.\n"
 quit_save:  .asciiz "Saving session... goodbye!\n"
 quit_end:   .asciiz "--- simulation terminated ---\n"
+reset_recog: .asciiz "\nCommand recognized: Reset.\n"
+reset_msg:   .asciiz "Digital Pet has been reset to its initial state!\n"
 
 .text
 .globl main
@@ -63,9 +65,63 @@ main_loop:
     li   $t2, 'F'
     beq  $t0, $t2, do_feed
 
-    # (E, P, I, R needs to be added here)
+    # If command is 'R', go to Reset handler
+    li   $t2, 'R'
+    beq  $t0, $t2, do_reset
+
+    # (E, P, I still need to be added here)
     # For any other command, just go to natural depletion
     j after_command
+
+# Reset: R
+# Restores current energy (s0) to the initial energy level (s3)
+do_reset:
+    # Set current energy back to initial IEL
+    move $s0, $s3
+
+    # "\nCommand recognized: Reset.\n"
+    li  $v0, 4
+    la  $a0, reset_recog
+    syscall
+
+    # "Digital Pet has been reset to its initial state!\n"
+    li  $v0, 4
+    la  $a0, reset_msg
+    syscall
+
+    # Show status bar with new energy (no natural depletion here)
+    li  $v0, 4
+    la  $a0, status_bar
+    syscall
+
+	# current energy (reset to IEL)
+    li  $v0, 1
+    move $a0, $s0           
+    syscall
+
+    li  $v0, 4
+    la  $a0, slash
+    syscall
+	# MEL
+    li  $v0, 1
+    move $a0, $s2           
+    syscall
+
+    li  $v0, 4
+    la  $a0, newline
+    syscall
+
+    li  $v0, 4
+    la  $a0, newline
+    syscall
+
+    # Print the command prompt again
+    li  $v0, 4
+    la  $a0, command_prompt
+    syscall
+
+    # Go back to main loop (no "Time +1s..." this turn)
+    j   main_loop
 
 # Feed: F n
 # t1 = n, s0 = current energy, s2 = MEL
