@@ -27,7 +27,10 @@ over_limit_num: .asciiz "The value cannot exceed "
 under_limit_num: .asciiz "The value cannot be less than 1"
 try_again: .asciiz ". Please try again: "
 wrong_type_Input_cmd: .asciiz "Invalid input. Follow this format for 'F/E/P/I n' (n<100) or 'R/Q'. Please try again: " 
-
+status_bar:      .asciiz "[######-----] Energy: "
+slash:           .asciiz "/"
+newline:         .asciiz "\n"
+command_prompt:  .asciiz "Enter a command (F, E, P, I, R, Q) > "
 .text
 .globl main
 main:
@@ -87,6 +90,36 @@ gameInit:
 	la $a0, init_success4
 	syscall
 	li $v0, 0
+
+    li  $v0, 4
+    la  $a0, status_bar
+    syscall
+
+    li  $v0, 1
+    move $a0, $s0           
+    syscall
+
+    li  $v0, 4
+    la  $a0, slash
+    syscall
+
+    li  $v0, 1
+    move $a0, $s2           
+    syscall
+
+    li  $v0, 4
+    la  $a0, newline
+    syscall
+
+    li  $v0, 4
+    la  $a0, newline
+    syscall
+
+    li  $v0, 4
+    la  $a0, command_prompt
+    syscall
+
+    li $v0, 0
 	
 	lw $ra, 4($sp)
 	addiu $sp, $sp, 8
