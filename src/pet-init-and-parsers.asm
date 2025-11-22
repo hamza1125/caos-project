@@ -32,6 +32,13 @@ slash:           .asciiz "/"
 newline:         .asciiz "\n"
 command_prompt:  .asciiz "Enter a command (F, E, P, I, R, Q) > "
 deplete_msg: .asciiz "\nTime +1s...  Natural energy depletion!\n"
+feed_recog:    .asciiz "\nCommand recognized: Feed "
+feed_dot_nl:   .asciiz ".\n"
+feed_inc:      .asciiz "Energy increased by "
+feed_units_nl: .asciiz " units.\n"
+quit_recog: .asciiz "\nCommand recognized: Quit.\n"
+quit_save:  .asciiz "Saving session... goodbye!\n"
+quit_end:   .asciiz "--- simulation terminated ---\n"
 
 .text
 .globl main
@@ -48,9 +55,80 @@ main_loop:
     move $t0, $v0               # t0 = command letter
     move $t1, $v1               # t1 = number (unused for now)
 
+    # If command is 'Q', quit the program
+    li   $t2, 'Q'
+    beq  $t0, $t2, quit_program
 
-    # (We need to implement F/E/P/I/R/Q here); 
+    # If command is 'F', go to Feed handler
+    li   $t2, 'F'
+    beq  $t0, $t2, do_feed
 
+    # (E, P, I, R needs to be added here)
+    # For any other command, just go to natural depletion
+    j after_command
+
+# Feed: F n
+# t1 = n, s0 = current energy, s2 = MEL
+do_feed:
+    # Increase energy: s0 = s0 + n
+    addu $s0, $s0, $t1
+
+    # Cap at MEL (max energy)
+    ble  $s0, $s2, feed_no_cap
+    move $s0, $s2
+feed_no_cap:
+
+    # "\nCommand recognized: Feed n."
+    li  $v0, 4
+    la  $a0, feed_recog
+    syscall
+
+    li  $v0, 1
+    move $a0, $t1
+    syscall
+
+    li  $v0, 4
+    la  $a0, feed_dot_nl
+    syscall
+
+    # "Energy increased by n units.\n"
+    li  $v0, 4
+    la  $a0, feed_inc
+    syscall
+
+    li  $v0, 1
+    move $a0, $t1
+    syscall
+
+    li  $v0, 4
+    la  $a0, feed_units_nl
+    syscall
+
+    # Status bar after feeding (before depletion)
+    li  $v0, 4
+    la  $a0, status_bar
+    syscall
+
+    li  $v0, 1
+    move $a0, $s0           
+    syscall
+
+    li  $v0, 4
+    la  $a0, slash
+    syscall
+
+    li  $v0, 1
+    move $a0, $s2           
+    syscall
+
+    li  $v0, 4
+    la  $a0, newline
+    syscall
+
+    # After feeding, go to natural depletion step
+    j after_command
+
+after_command:
     # Simulate passage of time (1 simulated second)
     #    Natural energy depletion: subtract EDR (s1) from current energy (s0)
     sub  $s0, $s0, $s1          # s0 = s0 - s1
@@ -97,7 +175,24 @@ energy_ok:
     j   main_loop
 
 
+quit_program:
 
+    li  $v0, 4
+    la  $a0, quit_recog
+    syscall
+
+    # Saving session... goodbye!
+    li  $v0, 4
+    la  $a0, quit_save
+    syscall
+
+    # --- simulation terminated ---
+    li  $v0, 4
+    la  $a0, quit_end
+    syscall
+
+    li  $v0, 10
+    syscall
 
 # purpose: Print startup prompts, read and store EDR/MEL/IEL via numberToMemory, echo chosen values, initialise to s registers.
 # output:  v0 = 0; s1 = EDR, s2 = MEL, s0 = IEL, s3 = IEL (copy); 
