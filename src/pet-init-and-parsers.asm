@@ -13,7 +13,7 @@ edr: .word 1
 mel: .word 15
 iel: .word 5
 
-input_buffer: .byte 0:BUFFER_SIZE
+input_buffer: .space BUFFER_SIZE
 
 init_header: .asciiz "=== Digital Pet Simulator (MIPS32) ===\nInitializing system...\n\nPlease set parameters (press Enter for default):\nEnter Natural Energy Depletion Rate (EDR) [Default: 1]: "
 init_mel: .asciiz "Enter Maximum Energy Level (MEL) [Default: 15]: "
@@ -110,7 +110,7 @@ numberToMemory:
 	NTM_read:
 		READ_INPUT (input_buffer, BUFFER_SIZE)
 		la $a0, input_buffer
-		li, $a1, MAX_NUMERIC_VALUE
+		li $a1, MAX_NUMERIC_VALUE
 		jal parseNumber
 		beq $v1, 2, NTM_error
 		beqz $v1, NTM_bounds
@@ -181,7 +181,7 @@ commandParser:
     		j CP_read
     	CP_letterOk:
     		move $s0, $v0
-    		li, $a1, MAX_NUMERIC_VALUE
+    		li $a1, MAX_NUMERIC_VALUE
     		jal parseNumber
     		li $t3, 2
     		beq $v1, $t3, CP_error
