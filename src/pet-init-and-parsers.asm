@@ -1,6 +1,6 @@
 .eqv BUFFER_SIZE 8 #>1
 .eqv MAX_NUMERIC_VALUE 2 #>0
-
+.eqv BAR_WIDTH 20
 .macro READ_INPUT (%addr, %len)
     li  $v0, 8
     la  $a0, %addr
@@ -41,6 +41,7 @@ quit_save:  .asciiz "Saving session... goodbye!\n"
 quit_end:   .asciiz "--- simulation terminated ---\n"
 reset_recog: .asciiz "\nCommand recognized: Reset.\n"
 reset_msg:   .asciiz "Digital Pet has been reset to its initial state!\n"
+energy_word: .asciiz "] Energy: "
 
 .text
 .globl main
@@ -90,26 +91,7 @@ do_reset:
     syscall
 
     # Show status bar with new energy (no natural depletion here)
-    li  $v0, 4
-    la  $a0, status_bar
-    syscall
-
-	# current energy (reset to IEL)
-    li  $v0, 1
-    move $a0, $s0           
-    syscall
-
-    li  $v0, 4
-    la  $a0, slash
-    syscall
-	# MEL
-    li  $v0, 1
-    move $a0, $s2           
-    syscall
-
-    li  $v0, 4
-    la  $a0, newline
-    syscall
+    jal energyBar
 
     li  $v0, 4
     la  $a0, newline
@@ -160,26 +142,7 @@ feed_no_cap:
     la  $a0, feed_units_nl
     syscall
 
-    # Status bar after feeding (before depletion)
-    li  $v0, 4
-    la  $a0, status_bar
-    syscall
-
-    li  $v0, 1
-    move $a0, $s0           
-    syscall
-
-    li  $v0, 4
-    la  $a0, slash
-    syscall
-
-    li  $v0, 1
-    move $a0, $s2           
-    syscall
-
-    li  $v0, 4
-    la  $a0, newline
-    syscall
+	jal energyBar
 
     # After feeding, go to natural depletion step
     j after_command
@@ -198,25 +161,7 @@ energy_ok:
     syscall
 
     # Print status bar line: [######-----] Energy: current/max
-    li  $v0, 4
-    la  $a0, status_bar
-    syscall
-
-    li  $v0, 1
-    move $a0, $s0               
-    syscall
-
-    li  $v0, 4
-    la  $a0, slash
-    syscall
-
-    li  $v0, 1
-    move $a0, $s2               
-    syscall
-
-    li  $v0, 4
-    la  $a0, newline
-    syscall
+    jal energyBar
 
     li  $v0, 4
     la  $a0, newline
@@ -300,27 +245,7 @@ gameInit:
 	li $v0, 4
 	la $a0, init_success4
 	syscall
-	li $v0, 0
-
-    li  $v0, 4
-    la  $a0, status_bar
-    syscall
-
-    li  $v0, 1
-    move $a0, $s0           
-    syscall
-
-    li  $v0, 4
-    la  $a0, slash
-    syscall
-
-    li  $v0, 1
-    move $a0, $s2           
-    syscall
-
-    li  $v0, 4
-    la  $a0, newline
-    syscall
+	jal energyBar
 
     li  $v0, 4
     la  $a0, newline
@@ -546,3 +471,59 @@ parseLetter:
 		li $v1, 2
 	PL_return:
 		jr $ra
+		
+energyBar:
+	move $t4, $s0
+	move $t2, $s2
+	bltz $t4, EB_set_zero
+  	bgt $t4, $t2, EB_set_mel
+    	j EB_calc_bar
+	EB_set_zero:
+    		move $t4, $zero
+    		j EB_calc_bar
+	EB_set_mel:
+    		move $t4, $t2
+    	EB_calc_bar:
+    		li $t0, BAR_WIDTH
+    		mul $t1, $t4, $t0
+		div $t1, $t2
+    		mflo $t1
+    		li   $t3, 0
+    		li   $v0, 11
+    		li   $a0, '['
+    		syscall
+    	EB_fill_bar:
+    		bge $t3, $t0, EB_bar_ready
+    		blt $t3, $t1, EB_print_full
+		li $v0, 11
+		li $a0, '-'
+		syscall
+		addi $t3, $t3, 1
+		j EB_fill_bar
+	EB_print_full:
+		addi $t3, $t3, 1
+		li   $v0, 11
+		li   $a0, '#'
+		syscall
+		j EB_fill_bar
+	EB_bar_ready:
+		li $v0, 4
+    		la $a0, energy_word
+    		syscall
+    		li $v0, 1
+		move $a0, $t4
+		syscall
+		li $v0, 11
+		li $a0, '/'
+		syscall
+		li $v0, 1
+		move $a0, $t2
+		syscall
+		li $v0, 11
+		li $a0, '\n'
+		syscall
+		jr $ra
+		
+		
+    		
+    		 
