@@ -31,7 +31,8 @@ status_bar:      .asciiz "[######-----] Energy: "
 slash:           .asciiz "/"
 newline:         .asciiz "\n"
 command_prompt:  .asciiz "Enter a command (F, E, P, I, R, Q) > "
-deplete_msg: .asciiz "\nTime +1s...  Natural energy depletion!\n"
+deplete_prefix: .asciiz "\nTime +"
+deplete_suffix: .asciiz "s...  Natural energy depletion!\n"
 feed_recog:    .asciiz "\nCommand recognized: Feed "
 feed_dot_nl:   .asciiz ".\n"
 feed_inc:      .asciiz "Energy increased by "
@@ -71,14 +72,95 @@ main_loop:
     la  $a0, command_prompt
     syscall
 
-    # Read a command line using commandParser
+    # Start timer (ms)
+    li  $v0, 30
+    syscall
+    move $s4, $a0               # s4 = start_ms (low word)
+
+    # Read a command line using commandParser (blocks until Enter)
     jal  commandParser          # v0 = letter, v1 = number or -1
 
-    move $t0, $v0               # t0 = command letter
-    move $t1, $v1               # t1 = number (unused for now)
+    # Save command results safely across syscalls
+    move $s5, $v0               # s5 = command letter
+    move $s6, $v1               # s6 = number
 
-    # If pet is dead, only allow Reset or Quit
-    beqz $s0, dead_command_gate
+    # End timer (ms)
+    li  $v0, 30
+    syscall
+    move $t8, $a0               # t8 = end_ms (low word)
+
+    # Compute elapsed_seconds = (end - start) / 1000
+    subu $t0, $t8, $s4          # elapsed_ms
+    li   $t1, 1000
+    divu $t0, $t1
+    mflo $t9                    # t9 = elapsed_seconds (N)
+
+    # Calculate depletion = EDR * elapsed_seconds
+    mul  $t3, $s1, $t9
+
+    # Print "Time +Ns... Natural energy depletion!" if N > 0
+    beqz $t9, skip_deplete_print
+
+    li  $v0, 4
+    la  $a0, deplete_prefix
+    syscall
+
+    li  $v0, 1
+    move $a0, $t9
+    syscall
+
+    li  $v0, 4
+    la  $a0, deplete_suffix
+    syscall
+
+skip_deplete_print:
+    # Apply depletion before command
+    subu $s0, $s0, $t3
+
+    # Check for death
+    bgtz $s0, depletion_alive
+
+    # CASE: Pet died from depletion
+    move $s0, $zero
+    
+    # 1. Print dead_error
+    li  $v0, 4
+    la  $a0, dead_error
+    syscall
+    
+    # 2. Print Bar (0/MAX)
+    jal energyBar
+    
+    # 3. Print Banner
+    li  $v0, 4
+    la  $a0, dead_banner
+    syscall
+
+    # 4. Check if command is R or Q (Restore command first)
+    move $t0, $s5
+    move $t1, $s6
+
+    li   $t2, 'R'
+    beq  $t0, $t2, do_reset
+    li   $t2, 'Q'
+    beq  $t0, $t2, quit_program
+    
+    # If not R or Q, assume invalid command for dead state
+    li  $v0, 4
+    la  $a0, dead_only_cmd
+    syscall
+    
+    j   main_loop
+
+depletion_alive:
+    # CASE: Pet is valid and alive
+    
+    # 1. Show energy bar (Post-depletion state)
+    jal energyBar
+
+    # 2. Proceed to command dispatch (Restore command first)
+    move $t0, $s5
+    move $t1, $s6
 
 alive_command_dispatch:
 
@@ -106,7 +188,7 @@ alive_command_dispatch:
     li   $t2, 'R'
     beq  $t0, $t2, do_reset
 
-    # For any other command, just go to natural depletion
+    # For any other command, just go to loop (handled by parser mostly)
     j after_command
 
 dead_command_gate:
@@ -356,32 +438,7 @@ ign_show_bar:
     j after_command
 
 after_command:
-    # If pet already dead, skip natural depletion and go straight to death flow
-    beqz $s0, pet_dead_flow
-
-    # Simulate passage of time (1 simulated second)
-    #    Natural energy depletion: subtract EDR (s1) from current energy (s0)
-    sub  $s0, $s0, $s1          # s0 = s0 - s1
-    bgez $s0, energy_ok         # if s0 >= 0, it's fine
-    move $s0, $zero             # if it went negative, clamp to 0
-energy_ok:
-
-    # Print "Time +1s...  Natural energy depletion!"
-    li  $v0, 4
-    la  $a0, deplete_msg
-    syscall
-
-    # Print status bar line: [######-----] Energy: current/max
-    jal energyBar
-
-    li  $v0, 4
-    la  $a0, newline
-    syscall
-
-    # If pet died from natural depletion, show death banner and prompt
-    beqz $s0, pet_dead_flow
-
-    # Loop back to wait for the next command
+    # Logic now handled at top of loop. Just return.
     j   main_loop
 
 
