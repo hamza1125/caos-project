@@ -77,12 +77,13 @@ main_loop:
     syscall
     move $s4, $a0               # s4 = start_ms (low word)
 
-    # Read a command line using commandParser (blocks until Enter)
     jal  commandParser          # v0 = letter, v1 = number or -1
 
-    # Save command results safely across syscalls
     move $s5, $v0               # s5 = command letter
     move $s6, $v1               # s6 = number
+
+	# If pet is dead, only allow Reset or Quit
+    beqz $s0, dead_command_gate
 
     # End timer (ms)
     li  $v0, 30
@@ -136,20 +137,7 @@ skip_deplete_print:
     la  $a0, dead_banner
     syscall
 
-    # 4. Check if command is R or Q (Restore command first)
-    move $t0, $s5
-    move $t1, $s6
-
-    li   $t2, 'R'
-    beq  $t0, $t2, do_reset
-    li   $t2, 'Q'
-    beq  $t0, $t2, quit_program
-    
-    # If not R or Q, assume invalid command for dead state
-    li  $v0, 4
-    la  $a0, dead_only_cmd
-    syscall
-    
+    # After natural death, just go back to loop to wait for Reset/Quit.
     j   main_loop
 
 depletion_alive:
@@ -192,6 +180,7 @@ alive_command_dispatch:
     j after_command
 
 dead_command_gate:
+    move $t0, $s5
     li   $t2, 'R'
     beq  $t0, $t2, do_reset
     li   $t2, 'Q'
@@ -199,7 +188,7 @@ dead_command_gate:
     li  $v0, 4
     la  $a0, dead_only_cmd
     syscall
-    j   pet_dead_flow
+    j   main_loop
 
 # Reset: R
 # Restores current energy (s0) to the initial energy level (s3)
@@ -778,5 +767,3 @@ energyBar:
 		jr $ra
 		
 		
-    		
-    		 
