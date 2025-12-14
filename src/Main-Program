@@ -1,6 +1,9 @@
 .eqv BUFFER_SIZE 32 #>1
 .eqv MAX_NUMERIC_VALUE 2 #>0
 .eqv BAR_WIDTH 20
+.eqv HEAL_THRESHOLD 10
+.eqv HEAL_TICKS 2
+.eqv LOW_ENERGY_THRESHOLD 3
 .macro READ_INPUT (%addr, %len)
     li  $v0, 8
     la  $a0, %addr
@@ -12,6 +15,7 @@
 edr: .word 1
 mel: .word 15
 iel: .word 5
+heal_counter: .word 0
 
 input_buffer: .space BUFFER_SIZE
 
@@ -57,6 +61,8 @@ reset_recog: .asciiz "\nCommand recognized: Reset.\n"
 reset_msg:   .asciiz "Digital Pet has been reset to its initial state!\n"
 energy_word: .asciiz "] Energy: "
 dead_only_cmd: .asciiz "Pet is dead. Only Reset (R) or Quit (Q) are allowed.\n"
+warning_low: .asciiz "*** Warning: Energy low - feed soon! ***\n"
+auto_heal_msg: .asciiz "Auto-heal triggered: +1 energy.\n"
 
 .text
 .globl main
@@ -427,7 +433,68 @@ ign_show_bar:
     j after_command
 
 after_command:
-    # Logic now handled at top of loop. Just return.
+    # --- Auto-Healing Logic ---
+
+    # Auto-heal if energy stays above threshold for consecutive ticks
+    move $t6, $zero             # heal flag
+    
+    # Load streak counter from memory
+    la   $t5, heal_counter
+    lw   $t4, 0($t5)            # t4 = streak count
+
+    beqz $s0, heal_reset
+    li  $t8, HEAL_THRESHOLD
+    blt $s0, $t8, heal_reset
+    
+    # Increment streak
+    addiu $t4, $t4, 1
+    
+    li  $t9, HEAL_TICKS
+    blt $t4, $t9, heal_save_only
+
+    # Trigger Heal
+    addiu $s0, $s0, 1
+    ble  $s0, $s2, heal_cap_done
+    move $s0, $s2
+heal_cap_done:
+    move $t4, $zero             # Reset streak after heal
+    li   $t6, 1                 # Set heal flag
+    j heal_save_only
+
+heal_reset:
+    move $t4, $zero             # Reset streak if threshold not met
+
+heal_save_only:
+    sw   $t4, 0($t5)            # Save streak back to memory
+    j heal_done
+
+heal_done:
+    beqz $t6, skip_heal_msg
+    li  $v0, 4
+    la  $a0, auto_heal_msg
+    syscall
+skip_heal_msg:
+
+    # (Status bar is printed by command handlers, so we skip it here)
+ 
+    li  $v0, 4
+    la  $a0, newline
+    syscall
+
+    # Low energy warning (only if alive and at/below threshold)
+    beqz $s0, skip_warning
+    ble  $s0, LOW_ENERGY_THRESHOLD, show_warning
+    j skip_warning
+show_warning:
+    li  $v0, 4
+    la  $a0, warning_low
+    syscall
+skip_warning:
+
+    # If pet died from natural depletion, show death banner and prompt
+    beqz $s0, pet_dead_flow
+
+    # Loop back to wait for the next command
     j   main_loop
 
 
@@ -510,6 +577,8 @@ gameInit:
     li  $v0, 4
     la  $a0, newline
     syscall
+
+    move $s4, $zero          # heal streak counter
 
     li $v0, 0
 	
