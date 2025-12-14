@@ -27,6 +27,7 @@ ach_flags: .word 0
 input_buffer: .space BUFFER_SIZE
 
 init_header: .asciiz "=== Digital Pet Simulator (MIPS32) ===\nInitializing system...\n\nPlease set parameters (press Enter for default):\nEnter Natural Energy Depletion Rate (EDR) [Default: 1]: "
+reset_header: .asciiz "\n=== Resetting Simulator ===\nPlease re-set parameters (press Enter for to keep default values):\nEnter Natural Energy Depletion Rate (EDR) [Default: 1]: "
 init_mel: .asciiz "Enter Maximum Energy Level (MEL) [Default: 15]: "
 init_iel: .asciiz "Enter Initial Energy Level (IEL) [Default: 5]: "
 init_success: .asciiz "\nParameters set successfully!\n- EDR: "
@@ -83,6 +84,7 @@ ach_units_nl:  .asciiz "\n"
 .text
 .globl main
 main:
+    la  $a0, init_header
     jal gameInit        
 
 main_loop:
@@ -239,21 +241,16 @@ dead_command_gate:
 
 # Reset: Restores current energy (s0) to IEL (s3)
 do_reset:
-    # Set current energy back to initial IEL
-    move $s0, $s3
-
     # "\nCommand recognized: Reset.\n"
     li  $v0, 4
     la  $a0, reset_recog
     syscall
 
-    # "Digital Pet has been reset to its initial state!\n"
-    li  $v0, 4
-    la  $a0, reset_msg
-    syscall
+    # Re-initialize the game (EDR, MEL, IEL)
+    la  $a0, reset_header
+    jal gameInit
 
-    # Show status bar with new energy (no natural depletion here)
-    jal energyBar
+    j   main_loop
 
     li  $v0, 4
     la  $a0, newline
@@ -642,9 +639,17 @@ pet_dead_flow:
 gameInit:
 	addiu $sp, $sp, -8
 	sw $ra, 4($sp)
+
+    # Not needed for first initialisation, but enforces default vallues for future resets
+    li $t0, 1
+    sw $t0, edr
+    li $t0, 15
+    sw $t0, mel
+    li $t0, 5
+    sw $t0, iel
 	
 	li $v0, 4
-	la $a0, init_header
+    # $a0 already has header string
 	syscall
 	la $a0, edr
 	li $a1, -1
