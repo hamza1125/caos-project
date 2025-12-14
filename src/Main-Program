@@ -1,4 +1,4 @@
-.eqv BUFFER_SIZE 8 #>1
+.eqv BUFFER_SIZE 32 #>1
 .eqv MAX_NUMERIC_VALUE 2 #>0
 .eqv BAR_WIDTH 20
 .macro READ_INPUT (%addr, %len)
@@ -26,7 +26,7 @@ wrong_type_input_num: .asciiz "Invalid input: Only digits are allowed in this fi
 over_limit_num: .asciiz "The value cannot exceed "
 under_limit_num: .asciiz "The value cannot be less than 1"
 try_again: .asciiz ". Please try again: "
-wrong_type_Input_cmd: .asciiz "Invalid input. Follow this format for 'F/E/P/I n' (n<100) or 'R/Q'. Please try again: " 
+wrong_type_Input_cmd: .asciiz "Invalid input. Follow this format for 'F/E/P/I n' (n<100) or 'R/Q'. Please try again:\n" 
 status_bar:      .asciiz "[######-----] Energy: "
 slash:           .asciiz "/"
 newline:         .asciiz "\n"
@@ -36,12 +36,26 @@ feed_recog:    .asciiz "\nCommand recognized: Feed "
 feed_dot_nl:   .asciiz ".\n"
 feed_inc:      .asciiz "Energy increased by "
 feed_units_nl: .asciiz " units.\n"
+entertain_recog: .asciiz "\nCommand recognized: Entertain "
+entertain_dot_nl: .asciiz ".\n"
+pet_recog: .asciiz "\nCommand recognized: Pet "
+pet_dot_nl: .asciiz ".\n"
+ignore_recog: .asciiz "\nCommand recognized: Ignore "
+ignore_dot_nl: .asciiz ".\n"
+ignore_dec: .asciiz "Energy decreased by "
+ignore_units: .asciiz " units"
+ignore_mult_open: .asciiz " (3x"
+ignore_mult_close_nl: .asciiz ").\n"
+cap_error: .asciiz "Error, maximum energy level reached! Capped to the Max.\n"
+dead_error: .asciiz "Error, energy level equal or less than 0. DP is dead!\n"
+dead_banner: .asciiz "*** Your Digital Pet has died! ***\n"
 quit_recog: .asciiz "\nCommand recognized: Quit.\n"
 quit_save:  .asciiz "Saving session... goodbye!\n"
 quit_end:   .asciiz "--- simulation terminated ---\n"
 reset_recog: .asciiz "\nCommand recognized: Reset.\n"
 reset_msg:   .asciiz "Digital Pet has been reset to its initial state!\n"
 energy_word: .asciiz "] Energy: "
+dead_only_cmd: .asciiz "Pet is dead. Only Reset (R) or Quit (Q) are allowed.\n"
 
 .text
 .globl main
@@ -52,11 +66,21 @@ main:
     # gameInit already printed initial status bar + command prompt.
 
 main_loop:
+    # Print the command prompt before reading
+    li  $v0, 4
+    la  $a0, command_prompt
+    syscall
+
     # Read a command line using commandParser
     jal  commandParser          # v0 = letter, v1 = number or -1
 
     move $t0, $v0               # t0 = command letter
     move $t1, $v1               # t1 = number (unused for now)
+
+    # If pet is dead, only allow Reset or Quit
+    beqz $s0, dead_command_gate
+
+alive_command_dispatch:
 
     # If command is 'Q', quit the program
     li   $t2, 'Q'
@@ -66,13 +90,34 @@ main_loop:
     li   $t2, 'F'
     beq  $t0, $t2, do_feed
 
+    # If command is 'E', go to Entertain handler
+    li   $t2, 'E'
+    beq  $t0, $t2, do_entertain
+
+    # If command is 'P', go to Pet handler
+    li   $t2, 'P'
+    beq  $t0, $t2, do_pet
+
+    # If command is 'I', go to Ignore handler
+    li   $t2, 'I'
+    beq  $t0, $t2, do_ignore
+
     # If command is 'R', go to Reset handler
     li   $t2, 'R'
     beq  $t0, $t2, do_reset
 
-    # (E, P, I still need to be added here)
     # For any other command, just go to natural depletion
     j after_command
+
+dead_command_gate:
+    li   $t2, 'R'
+    beq  $t0, $t2, do_reset
+    li   $t2, 'Q'
+    beq  $t0, $t2, quit_program
+    li  $v0, 4
+    la  $a0, dead_only_cmd
+    syscall
+    j   pet_dead_flow
 
 # Reset: R
 # Restores current energy (s0) to the initial energy level (s3)
@@ -98,9 +143,7 @@ do_reset:
     syscall
 
     # Print the command prompt again
-    li  $v0, 4
-    la  $a0, command_prompt
-    syscall
+    # (commandParser now prints the prompt)
 
     # Go back to main loop (no "Time +1s..." this turn)
     j   main_loop
@@ -108,13 +151,17 @@ do_reset:
 # Feed: F n
 # t1 = n, s0 = current energy, s2 = MEL
 do_feed:
+    move $t4, $s0               # remember old energy
+    li   $t6, 0                 # cap flag
     # Increase energy: s0 = s0 + n
     addu $s0, $s0, $t1
 
     # Cap at MEL (max energy)
     ble  $s0, $s2, feed_no_cap
     move $s0, $s2
+    li   $t6, 1                 # capped
 feed_no_cap:
+    subu $t7, $s0, $t4          # actual increase applied
 
     # "\nCommand recognized: Feed n."
     li  $v0, 4
@@ -135,19 +182,183 @@ feed_no_cap:
     syscall
 
     li  $v0, 1
-    move $a0, $t1
+    move $a0, $t7
     syscall
 
     li  $v0, 4
     la  $a0, feed_units_nl
     syscall
 
+    beqz $t6, feed_show_bar
+    li  $v0, 4
+    la  $a0, cap_error
+    syscall
+
+feed_show_bar:
 	jal energyBar
 
     # After feeding, go to natural depletion step
     j after_command
 
+# Entertain: E n
+# t1 = n, s0 = current energy, s2 = MEL
+do_entertain:
+    move $t4, $s0               # remember old energy
+    sll  $t5, $t1, 1            # delta = 2 * n
+    li   $t6, 0                 # cap flag
+    addu $s0, $s0, $t5          # apply increase
+
+    ble  $s0, $s2, ent_no_cap
+    move $s0, $s2
+    li   $t6, 1                 # capped
+ent_no_cap:
+    subu $t7, $s0, $t4          # actual increase
+
+    li  $v0, 4
+    la  $a0, entertain_recog
+    syscall
+
+    li  $v0, 1
+    move $a0, $t1
+    syscall
+
+    li  $v0, 4
+    la  $a0, entertain_dot_nl
+    syscall
+
+    li  $v0, 4
+    la  $a0, feed_inc
+    syscall
+
+    li  $v0, 1
+    move $a0, $t7
+    syscall
+
+    li  $v0, 4
+    la  $a0, feed_units_nl
+    syscall
+
+    beqz $t6, ent_show_bar
+    li  $v0, 4
+    la  $a0, cap_error
+    syscall
+
+ent_show_bar:
+    jal energyBar
+    j after_command
+
+# Pet: P n
+# t1 = n, s0 = current energy, s2 = MEL
+do_pet:
+    move $t4, $s0               # remember old energy
+    sll  $t5, $t1, 1            # delta = 2 * n
+    li   $t6, 0                 # cap flag
+    addu $s0, $s0, $t5
+
+    ble  $s0, $s2, pet_no_cap
+    move $s0, $s2
+    li   $t6, 1
+pet_no_cap:
+    subu $t7, $s0, $t4          # actual increase
+
+    li  $v0, 4
+    la  $a0, pet_recog
+    syscall
+
+    li  $v0, 1
+    move $a0, $t1
+    syscall
+
+    li  $v0, 4
+    la  $a0, pet_dot_nl
+    syscall
+
+    li  $v0, 4
+    la  $a0, feed_inc
+    syscall
+
+    li  $v0, 1
+    move $a0, $t7
+    syscall
+
+    li  $v0, 4
+    la  $a0, feed_units_nl
+    syscall
+
+    beqz $t6, pet_show_bar
+    li  $v0, 4
+    la  $a0, cap_error
+    syscall
+
+pet_show_bar:
+    jal energyBar
+    j after_command
+
+# Ignore: I n
+# t1 = n, s0 = current energy
+do_ignore:
+    move $t4, $s0               # remember old energy
+    li   $t6, 0                 # death flag
+    sll  $t5, $t1, 1            # delta = 2 * n
+    addu $t5, $t5, $t1          # delta = 3 * n
+    subu $s0, $s0, $t5          # apply decrease
+
+    bgtz $s0, ign_no_death
+    move $s0, $zero
+    li   $t6, 1                 # dead
+ign_no_death:
+    subu $t7, $t4, $s0          # actual decrease
+
+    li  $v0, 4
+    la  $a0, ignore_recog
+    syscall
+
+    li  $v0, 1
+    move $a0, $t1
+    syscall
+
+    li  $v0, 4
+    la  $a0, ignore_dot_nl
+    syscall
+
+    li  $v0, 4
+    la  $a0, ignore_dec
+    syscall
+
+    li  $v0, 1
+    move $a0, $t7               # actual decrease
+    syscall
+
+    li  $v0, 4
+    la  $a0, ignore_units
+    syscall
+
+    li  $v0, 4
+    la  $a0, ignore_mult_open
+    syscall
+
+    li  $v0, 1
+    move $a0, $t1               # n
+    syscall
+
+    li  $v0, 4
+    la  $a0, ignore_mult_close_nl
+    syscall
+
+    beqz $t6, ign_show_bar
+    li  $v0, 4
+    la  $a0, dead_error
+    syscall
+
+ign_show_bar:
+    jal energyBar
+    bnez $t6, pet_dead_flow
+    j after_command
+
 after_command:
+    # If pet already dead, skip natural depletion and go straight to death flow
+    beqz $s0, pet_dead_flow
+
     # Simulate passage of time (1 simulated second)
     #    Natural energy depletion: subtract EDR (s1) from current energy (s0)
     sub  $s0, $s0, $s1          # s0 = s0 - s1
@@ -167,10 +378,8 @@ energy_ok:
     la  $a0, newline
     syscall
 
-    # Print the command prompt
-    li  $v0, 4
-    la  $a0, command_prompt
-    syscall
+    # If pet died from natural depletion, show death banner and prompt
+    beqz $s0, pet_dead_flow
 
     # Loop back to wait for the next command
     j   main_loop
@@ -195,9 +404,14 @@ quit_program:
     li  $v0, 10
     syscall
 
+# Shared death flow: show banner and prompt for reset/quit
+pet_dead_flow:
+    li  $v0, 4
+    la  $a0, dead_banner
+    syscall
+    j main_loop
+
 # purpose: Print startup prompts, read and store EDR/MEL/IEL via numberToMemory, echo chosen values, initialise to s registers.
-# output:  v0 = 0; s1 = EDR, s2 = MEL, s0 = IEL, s3 = IEL (copy); 
-# clobbers: ra (properly saved/restored)
 gameInit:
 	addiu $sp, $sp, -8
 	sw $ra, 4($sp)
@@ -251,10 +465,6 @@ gameInit:
     la  $a0, newline
     syscall
 
-    li  $v0, 4
-    la  $a0, command_prompt
-    syscall
-
     li $v0, 0
 	
 	lw $ra, 4($sp)
@@ -263,11 +473,6 @@ gameInit:
 #input of a0 = variable memory address, a1 max allowed value
 #output v0 as the final variable value, v1 as a flag if the variable was updated
 #reruns on the unsuccessful input
-# purpose: Read a line, parse number; if OK store to *(a0). Empty keeps old value; If exceeds max or bad input re-prompt.
-# input:   a0 = &word_to_update
-# output:  v0 = final value in memory; v1 = 0 updated | 1 empty
-# clobbers: ra, s0, s1 (saved/restored); uses input_buffer, READ_INPUT, parseNumber
-# notes:   parseNumber enforces max 2 digits; message printed on error.
 numberToMemory:
 	addiu $sp, $sp, -16
 	sw $ra, 12($sp)
@@ -328,11 +533,6 @@ numberToMemory:
 		addiu $sp, $sp, 16
 		jr $ra
 
-# purpose: read and parse command "F/E/P/I <num>" or "R/Q".
-# input:   none (reads with READ_INPUT)
-# output:  v0 = letter ('F','E','P','I','R','Q'); v1 = number or -1 if none
-# clobbers: ra, s0 (saved/restored); calls parseLetter then parseNumber
-# rules:   R/Q require EMPTY number; F/E/P/I require OK number.	
 commandParser:
 	addiu $sp, $sp, -8
     	sw    $ra, 4($sp)
@@ -342,10 +542,14 @@ commandParser:
     		READ_INPUT (input_buffer, BUFFER_SIZE)
     		la $a0, input_buffer
     		jal parseLetter
-    		beqz $v1, CP_letterOk
+    		beqz $v1, CP_letterOk      # v1 == 0 => letter ok
+    		beq  $v1, 1, CP_read       # empty input: re-read without error
     	CP_error:
     		li $v0, 4
     		la $a0, wrong_type_Input_cmd
+    		syscall
+    		li $v0, 4
+    		la $a0, command_prompt
     		syscall
     		j CP_read
     	CP_letterOk:
@@ -375,10 +579,6 @@ commandParser:
 		addiu $sp, $sp, 8
 		jr $ra
 
-# purpose: Parse [spaces]* DIGITS [spaces]* then '\n' or '\0'.
-# input:   a0 = buf ptr (scans from here) a1 = max digits allowed
-# output:  v0 = value; v1 = 0 ok | 1 empty | 2 error
-# notes:   advances a0 internally; accepts SPACE/TAB; rejects non-digits 
 parseNumber:
 	li $v0, 0
 	li $v1, 1
@@ -434,10 +634,6 @@ parseNumber:
     		li $v1, 2
     		jr $ra
     		
-# purpose: Parse a single command letter at *a0*; accepts F,E,P,I,R,Q (case-insensitive).
-# input:   a0 = buf ptr (must point at letter)
-# output:  v0 = uppercase letter; v1 = 0 ok | 1 empty | 2 error
-# notes:   uppercases a–z; advances a0 by 1 on success.
 parseLetter:
 	li $v1, 1
 	lb $t0, 0($a0)
