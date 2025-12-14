@@ -4,6 +4,10 @@
 .eqv HEAL_THRESHOLD 10
 .eqv HEAL_TICKS 2
 .eqv LOW_ENERGY_THRESHOLD 3
+.eqv ACH_SURVIVE_TICKS 60
+.eqv ACH_BONUS 2
+.eqv ACH_FLAG_SURV 1
+.eqv ACH_FLAG_MEL 2
 .macro READ_INPUT (%addr, %len)
     li  $v0, 8
     la  $a0, %addr
@@ -16,6 +20,9 @@ edr: .word 1
 mel: .word 15
 iel: .word 5
 heal_counter: .word 0
+survive_ticks: .word 0
+mel_hits: .word 0
+ach_flags: .word 0
 
 input_buffer: .space BUFFER_SIZE
 
@@ -63,6 +70,15 @@ energy_word: .asciiz "] Energy: "
 dead_only_cmd: .asciiz "Pet is dead. Only Reset (R) or Quit (Q) are allowed.\n"
 warning_low: .asciiz "*** Warning: Energy low - feed soon! ***\n"
 auto_heal_msg: .asciiz "Auto-heal triggered: +1 energy.\n"
+ach_survivor_msg: .asciiz "Achievement unlocked: Survivor! Bonus +2 energy.\n"
+ach_mel_msg: .asciiz "Achievement unlocked: Maxed Out (twice)! Bonus +2 energy.\n"
+ach_view_header: .asciiz "\nAchievements:\n"
+ach_view_surv: .asciiz "- Survivor (60 ticks above 5 energy): "
+ach_view_mel:  .asciiz "- Maxed Out twice: "
+ach_unlocked:  .asciiz "Unlocked\n"
+ach_progress:  .asciiz "Progress "
+ach_of:        .asciiz "/"
+ach_units_nl:  .asciiz "\n"
 
 .text
 .globl main
@@ -104,6 +120,13 @@ main_loop:
 
     # Calculate depletion = EDR * elapsed_seconds
     mul  $t3, $s1, $t9
+
+    # Pause timer effects while viewing achievements (command 'A')
+    li   $t2, 'A'
+    bne  $s5, $t2, timer_apply
+    move $t9, $zero             # ignore elapsed time
+    move $t3, $zero
+timer_apply:
 
     # Print "Time +Ns... Natural energy depletion!" if N > 0
     beqz $t9, skip_deplete_print
@@ -148,7 +171,36 @@ skip_deplete_print:
 
 depletion_alive:
     # CASE: Pet is valid and alive
-    
+
+    # Survivor achievement tick (only if time progressed)
+    beqz $t9, skip_survivor_tick
+    la   $t8, survive_ticks
+    lw   $t7, 0($t8)
+    ble  $s0, 5, surv_reset
+    addiu $t7, $t7, 1           # count one loop/tick
+    sw   $t7, 0($t8)
+    j surv_check
+surv_reset:
+    sw   $zero, 0($t8)
+surv_check:
+    la   $t6, ach_flags
+    lw   $t5, 0($t6)
+    andi $t4, $t5, ACH_FLAG_SURV
+    bnez $t4, surv_done
+    li   $t4, ACH_SURVIVE_TICKS
+    blt  $t7, $t4, surv_done
+    addiu $s0, $s0, ACH_BONUS
+    ble  $s0, $s2, surv_cap
+    move $s0, $s2
+surv_cap:
+    ori  $t5, $t5, ACH_FLAG_SURV
+    sw   $t5, 0($t6)
+    li   $v0, 4
+    la   $a0, ach_survivor_msg
+    syscall
+surv_done:
+skip_survivor_tick:
+
     # 1. Show energy bar (Post-depletion state)
     jal energyBar
 
@@ -169,6 +221,10 @@ alive_command_dispatch:
     # If command is 'E', go to Entertain handler
     li   $t2, 'E'
     beq  $t0, $t2, do_entertain
+
+    # If command is 'A', view achievements
+    li   $t2, 'A'
+    beq  $t0, $t2, do_view_ach
 
     # If command is 'P', go to Pet handler
     li   $t2, 'P'
@@ -272,6 +328,7 @@ feed_no_cap:
     syscall
 
 feed_show_bar:
+    jal ach_check_mel
 	jal energyBar
 
     # After feeding, go to natural depletion step
@@ -321,6 +378,7 @@ ent_no_cap:
     syscall
 
 ent_show_bar:
+    jal ach_check_mel
     jal energyBar
     j after_command
 
@@ -368,6 +426,7 @@ pet_no_cap:
     syscall
 
 pet_show_bar:
+    jal ach_check_mel
     jal energyBar
     j after_command
 
@@ -497,6 +556,99 @@ skip_warning:
     # Loop back to wait for the next command
     j   main_loop
 
+do_view_ach:
+    li  $v0, 4
+    la  $a0, ach_view_header
+    syscall
+
+    # Survivor status
+    li  $v0, 4
+    la  $a0, ach_view_surv
+    syscall
+    la  $t0, ach_flags
+    lw  $t1, 0($t0)
+    andi $t2, $t1, ACH_FLAG_SURV
+    beqz $t2, view_surv_progress
+    li  $v0, 4
+    la  $a0, ach_unlocked
+    syscall
+    j view_mel_status
+view_surv_progress:
+    la  $t3, survive_ticks
+    lw  $t4, 0($t3)
+    li  $v0, 4
+    la  $a0, ach_progress
+    syscall
+    li  $v0, 1
+    move $a0, $t4
+    syscall
+    li  $v0, 4
+    la  $a0, ach_of
+    syscall
+    li  $v0, 1
+    li  $a0, ACH_SURVIVE_TICKS
+    syscall
+    li  $v0, 4
+    la  $a0, ach_units_nl
+    syscall
+
+view_mel_status:
+    li  $v0, 4
+    la  $a0, ach_view_mel
+    syscall
+    andi $t2, $t1, ACH_FLAG_MEL
+    beqz $t2, view_mel_progress
+    li  $v0, 4
+    la  $a0, ach_unlocked
+    syscall
+    j view_done
+view_mel_progress:
+    la  $t3, mel_hits
+    lw  $t4, 0($t3)
+    li  $v0, 4
+    la  $a0, ach_progress
+    syscall
+    li  $v0, 1
+    move $a0, $t4
+    syscall
+    li  $v0, 4
+    la  $a0, ach_of
+    syscall
+    li  $v0, 1
+    li  $a0, 2
+    syscall
+    li  $v0, 4
+    la  $a0, ach_units_nl
+    syscall
+view_done:
+    j main_loop
+
+ach_check_mel:
+    # Count reaching MEL from below; award on second time
+    bge  $t4, $s2, ach_mel_done
+    bne  $s0, $s2, ach_mel_done
+    la   $t8, mel_hits
+    lw   $t9, 0($t8)
+    addiu $t9, $t9, 1
+    sw   $t9, 0($t8)
+    la   $t8, ach_flags
+    lw   $t7, 0($t8)
+    andi $t6, $t7, ACH_FLAG_MEL
+    bnez $t6, ach_mel_done
+    slti $t6, $t9, 2
+    bne  $t6, $zero, ach_mel_done
+    addiu $s0, $s0, ACH_BONUS
+    ble  $s0, $s2, ach_mel_cap
+    move $s0, $s2
+ach_mel_cap:
+    ori  $t7, $t7, ACH_FLAG_MEL
+    sw   $t7, 0($t8)
+    li   $v0, 4
+    la   $a0, ach_mel_msg
+    syscall
+ach_mel_done:
+    jr   $ra
+
 
 quit_program:
 
@@ -578,7 +730,15 @@ gameInit:
     la  $a0, newline
     syscall
 
-    move $s4, $zero          # heal streak counter
+    move $s4, $zero          # unused saved slot
+    la  $t0, heal_counter
+    sw  $zero, 0($t0)
+    la  $t0, survive_ticks
+    sw  $zero, 0($t0)
+    la  $t0, mel_hits
+    sw  $zero, 0($t0)
+    la  $t0, ach_flags
+    sw  $zero, 0($t0)
 
     li $v0, 0
 	
@@ -679,6 +839,8 @@ commandParser:
     		beq $s0, $t0, CP_noNum
     		li $t0, 'Q'
     		beq $s0, $t0, CP_noNum
+    		li $t0, 'A'
+    		beq $s0, $t0, CP_noNum
     		bnez $t2, CP_error
     		move $v0, $s0
     		move $v1, $t1
@@ -771,6 +933,8 @@ parseLetter:
 		li $t3, 'R'
 		beq $t0, $t3, PL_correct
 		li $t3, 'Q'
+		beq $t0, $t3, PL_correct
+		li $t3, 'A'
 		beq $t0, $t3, PL_correct
 		j PL_error
 	PL_correct:
