@@ -4,14 +4,12 @@ DISCLAIMER
 Generative AI tools were used in this project. Specifically, AI was used for:
 - Debugging 
 - Verifying the logic of our functions and main loop (e.g., checking for infinite loops, ensuring correct register usage, and verifying the logic of the program).
-- Asking if there was a way to record time in MIPS - after finding about syscall code 30 can do this, we implemented ourselves.
-- Resolving merge conflicts between git branches.
 
 (b) Extra Features Implemented
 
 1. Robust Input Parsing
-   The command parser handles varying user inputs:
-   - Case Insensitivity: Converts lowercase commands (e.g., 'f 5', 'a') to uppercase, allowing users to type quickly without holding Shift.
+   The command parser handles varying user inputs, making the game more user-friendly:
+   - Case Insensitivity: Converts lowercase commands (e.g., 'f 5', 'a') to uppercase
    - Whitespace Handling: Correctly parses commands even with trailing spaces or newlines.
    - Implementation: The 'parseLetter' function inspects the ASCII value of the input character. If it detects a lowercase letter (ASCII 97-122), it subtracts 32 to convert it to uppercase (ASCII 65-90) then checks if 
    it is a valid command (F, E, P, I, R, Q). Additionally, the parser loops to skip over any leading or trailing whitespace characters.
@@ -28,14 +26,14 @@ Generative AI tools were used in this project. Specifically, AI was used for:
    - Implementation: This uses a memory variable (heal_counter) to track the consecutive "healthy" ticks, ensuring the state persists across loops without occupying a critical register.
 
 4. Achievements System
-   We decided it would be benefical to add a 'gamification' layer to incentivise engage the user further, giving users long-term goals beyond basic survival.
+   Users can track and unlock achievements:
    - Survivor Achievement: Unlocked by keeping energy strictly above 5 for 60 consecutive ticks.
    - Maxed Out Achievement: Unlocked by hitting the Maximum Energy Level (MEL) twice.
-   These achievements can be viewed at any time using the 'A' Command. It allows the user to view their achievement progress at any time. 
-   Importantly, viewing achievements pauses the depletion timer for that specific action, so users aren't punished for reading the status 
-   screen (though the depletion timer resumes after they have entered it).
+   These achievements can be viewed at any time using the 'A' Command. 
+   Importantly, viewing achievements pauses the depletion timer for that specific action (from when the input message is shown to when 'A' is entered), so users aren't punished for checking their achievements. 
+   
 
 5. Enhanced Reset Functionality
-   Allows the user to fully re-configure the simulation parameters mid-game, rather than just restoring energy.
-   - Logic: When the user selects 'R' (Reset), the game re-runs the initialization sequence, allowing the user to change the Difficulty (EDR) or Max Energy (MEL) for the next run without restarting the simulator.
-   - Implementation: The `gameInit` function was refactored to accept a dynamic header string argument (`$a0`) and to force-reset memory variables to defaults, ensuring a clean slate for the new session.
+   Allows the user to re-configure initial parameters mid-game after resetting
+   - Logic: When the user selects 'R' (Reset), the game re-runs the initialisation sequence, allowing the user to change the Difficulty (EDR) or Max Energy (MEL) for the next run without restarting the simulator.
+   - Implementation: The 'gameInit' function was refactored to accept a dynamic header string argument ('$a0') and to force-reset memory variables to defaults.
