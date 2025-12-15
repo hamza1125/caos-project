@@ -32,7 +32,9 @@ Generative AI tools were used in this project. Specifically, AI was used for:
    
 5. Enhanced Reset Functionality
    Allows the user to re-configure initial parameters mid-game after resetting
-   - Logic: When the user selects 'R' (Reset), the game re-runs the initialisation sequence, allowing the user to change the Difficulty (EDR) or Max Energy (MEL) for the next run without restarting the simulator.
+   - Logic: When the user selects 'R' (Reset), user is asked if they want to reset initialisation values or stick with their original parameters
+   - If user selects 'Y' (Keep settings), the normal reset sequence is run.
+   - If the user selects 'N', the game re-runs the initialisation sequence, allowing the user to change the Difficulty (EDR), Max Energy (MEL), and Initial Energy (IEL).
 
 6. Session Stats Feature
    Provides detailed metrics about the current session's performance.
