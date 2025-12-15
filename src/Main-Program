@@ -665,7 +665,7 @@ comeback_post_done:
 
     # --- Auto-Healing Logic ---
     # Implementation: Uses 'heal_counter' in memory to track consecutive ticks. Logic: +1 Energy after 3 ticks > 10.
-    # Auto-heal if energy stays above threshold for consecutive ticks
+    # Auto-heal if energy stays at or above the threshold for consecutive ticks
     move $t6, $zero             
     
     # t4 = streak count
