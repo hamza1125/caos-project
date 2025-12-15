@@ -169,7 +169,7 @@ timer_pause_cmd:
     li   $t1, 1
     sw   $t1, 0($t0)
 timer_apply:
-    move $s7, $t9                # stash elapsed seconds for later checks
+    move $s7, $t9                
 
     # Count command usage
     la   $t0, commands_used
@@ -664,6 +664,7 @@ comeback_post_reset:
 comeback_post_done:
 
     # --- Auto-Healing Logic ---
+    # Implementation: Uses 'heal_counter' in memory to track consecutive ticks. Logic: +1 Energy after 3 ticks > 10.
     # Auto-heal if energy stays above threshold for consecutive ticks
     move $t6, $zero             
     
@@ -714,6 +715,7 @@ skip_heal_msg:
     syscall
 
     # Low energy warning
+    # Implementation: Checks if energy <= LOW_ENERGY_THRESHOLD (3) and prints warning.
     beqz $s0, skip_warning
     ble  $s0, LOW_ENERGY_THRESHOLD, show_warning
     j skip_warning
@@ -1249,12 +1251,14 @@ parseLetter:
 	lb $t0, 0($a0)
 	beqz $t0, PL_return
 	beq $t0, 10, PL_return
+    # Implementation: Detects lowercase (a-z) and subtracts 32 to convert to uppercase (A-Z).
 	li $t1, 'a'
 	li $t2, 'z'
 	blt $t0, $t1, PL_check
 	bgt $t0, $t2, PL_check
 	addi $t0, $t0, -32
 	PL_check:
+        # Implementation: Checks if character is a valid command (F, E, P, I, R, Q, A, L).
 		li $t3, 'F'
 		beq $t0, $t3, PL_correct
 		li $t3, 'E'

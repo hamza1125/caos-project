@@ -11,19 +11,14 @@ Generative AI tools were used in this project. Specifically, AI was used for:
    The command parser handles varying user inputs, making the game more user-friendly:
    - Case Insensitivity: Converts lowercase commands (e.g., 'f 5', 'a') to uppercase
    - Whitespace Handling: Correctly parses commands even with trailing spaces or newlines.
-   - Implementation: The 'parseLetter' function inspects the ASCII value of the input character. If it detects a lowercase letter (ASCII 97-122), it subtracts 32 to convert it to uppercase (ASCII 65-90) then checks if 
-   it is a valid command (F, E, P, I, R, Q). Additionally, the parser loops to skip over any leading or trailing whitespace characters.
 
 2. Low Energy Warning Feature
    This is a warning mechanism to alert the user before the pet dies.
    - Logic: After natural depletion and status updates, if the pet's energy falls to 3 or below (but is still alive), a warning message "*** Warning: Energy low - feed soon! ***" is displayed to prompt immediate action.
-   - Implementation: This check is performed at the end of the 'after_command' block. The program compares current energy (`$s0`) against the `LOW_ENERGY_THRESHOLD` constant (set to 3). If the condition is met and the pet is alive, 
-   the warning string is printed via syscall 4.
 
 3. Auto Heal Feature
    Rewards consistent care of the pet by providing automatic boost in energy level.
    - Logic: If the pet's energy stays above a high threshold (HEAL_THRESHOLD = 10) for a set number of consecutive turns (HEAL_TICKS = 3), the pet automatically regenerates +1 Energy.
-   - Implementation: This uses a memory variable (heal_counter) to track the consecutive "healthy" ticks, ensuring the state persists across loops without occupying a critical register.
 
 4. Achievements System
    Users can track and unlock achievements:
@@ -38,7 +33,6 @@ Generative AI tools were used in this project. Specifically, AI was used for:
 5. Enhanced Reset Functionality
    Allows the user to re-configure initial parameters mid-game after resetting
    - Logic: When the user selects 'R' (Reset), the game re-runs the initialisation sequence, allowing the user to change the Difficulty (EDR) or Max Energy (MEL) for the next run without restarting the simulator.
-   - Implementation: The 'gameInit' function was refactored to accept a dynamic header string argument ('$a0') and to force-reset memory variables to defaults.
 
 6. Session Stats Feature
    Provides detailed metrics about the current session's performance.
