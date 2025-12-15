@@ -429,12 +429,6 @@ do_reset:
 
     j   main_loop
 
-    li  $v0, 4
-    la  $a0, newline
-    syscall
-
-    j   main_loop
-
 # Feed, F n: t1 = n, s0 = current energy, s2 = MEL
 do_feed:
     # Store old energy and implement a 'boolean' value to $t6
