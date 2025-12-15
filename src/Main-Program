@@ -143,7 +143,13 @@ main_loop:
     subu $t0, $t8, $s4          
     li   $t1, 1000
     divu $t0, $t1
-    mflo $t9                    
+    mflo $t9
+
+    # Clamp elapsed seconds to at least 1
+    bgtz $t9, elapsed_ok         # if t9 > 0, keep it
+    li   $t9, 1                  # else force it to 1
+    elapsed_ok:
+
     mul  $t3, $s1, $t9
 
     # If previous loop requested a pause (achievements), zero out elapsed/depletion once
