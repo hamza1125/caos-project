@@ -29,12 +29,14 @@ Generative AI tools were used in this project. Specifically, AI was used for:
    - Marathon Achievement: Unlocked by surviving for 300 total ticks (seconds) in a single life.
    These achievements can be viewed at any time using the 'A' Command. 
    Importantly, viewing achievements pauses the depletion timer for that specific action (from when the input message is shown to when 'A' is entered), so users aren't punished for checking their achievements. 
+
+5. Session Statistics Feature: Accessed via L command Key. Prints header then four stats in order : total ticks survived (accumulated elapsed seconds), commands entered (incremented each loop), auto-heals triggered (count of heal events), and longest streak above 10 energy (ticks); returns to main loop afterward.
    
-5. Enhanced Reset Functionality
+6. Enhanced Reset Functionality
    Allows the user to re-configure initial parameters mid-game after resetting
    - Logic: When the user selects 'R' (Reset), the game re-runs the initialisation sequence, allowing the user to change the Difficulty (EDR) or Max Energy (MEL) for the next run without restarting the simulator.
 
-6. Session Stats Feature
+7. Session Stats Feature
    Provides detailed metrics about the current session's performance.
    - Function: Accessed via the 'L' command, it displays:
      - Total Ticks Survived: The cumulative number of "active" seconds the pet has been alive (excluding time spent in menus).
