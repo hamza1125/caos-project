@@ -84,7 +84,8 @@ ach_units_nl:  .asciiz "\n"
 .text
 .globl main
 main:
-    la  $a0, init_header
+    # Application Startup & Initial Configuration
+    la  $a0, init_header # configures $s1=EDR, $s2=MEL, $s0=current energy, $s3=IEL
     jal gameInit        
 
 main_loop:
