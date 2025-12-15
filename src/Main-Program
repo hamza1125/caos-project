@@ -8,6 +8,13 @@
 .eqv ACH_BONUS 2
 .eqv ACH_FLAG_SURV 1
 .eqv ACH_FLAG_MEL 2
+.eqv ACH_FLAG_COMEBACK 4
+.eqv ACH_FLAG_VIGIL 8
+.eqv ACH_FLAG_MAR 16
+.eqv ACH_VIGIL_TICKS 40
+.eqv ACH_MARATHON_TICKS 300
+.eqv ACH_BONUS_MAR 3
+.eqv HIGH_STREAK_THRESHOLD 10
 .macro READ_INPUT (%addr, %len)
     li  $v0, 8
     la  $a0, %addr
@@ -23,6 +30,15 @@ heal_counter: .word 0
 survive_ticks: .word 0
 mel_hits: .word 0
 ach_flags: .word 0
+comeback_ticks: .word 0
+vigil_ticks: .word 0
+timer_pause: .word 0
+marathon_ticks: .word 0
+total_ticks: .word 0
+commands_used: .word 0
+high_streak_cur: .word 0
+high_streak_max: .word 0
+heals_triggered: .word 0
 
 input_buffer: .space BUFFER_SIZE
 
@@ -41,7 +57,7 @@ wrong_type_Input_cmd: .asciiz "Invalid input. Follow this format for 'F/E/P/I n'
 status_bar:      .asciiz "[######-----] Energy: "
 slash:           .asciiz "/"
 newline:         .asciiz "\n"
-command_prompt:  .asciiz "Enter a command (F, E, P, I, R, Q) > "
+command_prompt:  .asciiz "Enter a command (F, E, P, I, R, Q, A, L) > "
 deplete_prefix: .asciiz "\nTime +"
 deplete_suffix: .asciiz "s...  Natural energy depletion!\n"
 feed_recog:    .asciiz "\nCommand recognized: Feed "
@@ -75,10 +91,21 @@ ach_mel_msg: .asciiz "Achievement unlocked: Maxed Out (twice)! Bonus +2 energy.\
 ach_view_header: .asciiz "\nAchievements:\n"
 ach_view_surv: .asciiz "- Survivor (60 ticks above 5 energy): "
 ach_view_mel:  .asciiz "- Maxed Out twice: "
+ach_view_comeback: .asciiz "- Comeback Kid (1 -> 10 in 5 ticks): "
+ach_view_vigil: .asciiz "- Vigilant (stay above 3 for 40 ticks): "
+ach_view_marathon: .asciiz "- Marathon (survive 300 ticks): "
 ach_unlocked:  .asciiz "Unlocked\n"
 ach_progress:  .asciiz "Progress "
 ach_of:        .asciiz "/"
 ach_units_nl:  .asciiz "\n"
+ach_comeback_msg: .asciiz "Achievement unlocked: Comeback Kid! Bonus +2 energy.\n"
+ach_vigil_msg: .asciiz "Achievement unlocked: Vigilant! Bonus +2 energy.\n"
+ach_marathon_msg: .asciiz "Achievement unlocked: Marathon! Bonus +3 energy.\n"
+stats_header: .asciiz "\nSession Stats:\n"
+stats_ticks:  .asciiz "- Total ticks survived: "
+stats_cmds:   .asciiz "- Commands entered: "
+stats_heals:  .asciiz "- Auto-heals triggered: "
+stats_streak: .asciiz "- Longest streak above 10 energy (ticks): "
 
 .text
 .globl main
@@ -121,12 +148,36 @@ main_loop:
     # Calculate depletion = EDR * elapsed_seconds
     mul  $t3, $s1, $t9
 
-    # Pause timer effects while viewing achievements (command 'A')
+    # If previous loop requested a pause (achievements), zero out elapsed/depletion once
+    la   $t0, timer_pause
+    lw   $t1, 0($t0)
+    beqz $t1, pause_done
+    move $t9, $zero
+    move $t3, $zero
+    sw   $zero, 0($t0)
+pause_done:
+
+    # Pause timer effects while viewing achievements (A) or stats (L)
     li   $t2, 'A'
-    bne  $s5, $t2, timer_apply
+    beq  $s5, $t2, timer_pause_cmd
+    li   $t2, 'L'
+    beq  $s5, $t2, timer_pause_cmd
+    j    timer_apply
+timer_pause_cmd:
     move $t9, $zero             # ignore elapsed time
     move $t3, $zero
+    # Set pause flag so the next loop also ignores elapsed time while user is viewing
+    la   $t0, timer_pause
+    li   $t1, 1
+    sw   $t1, 0($t0)
 timer_apply:
+    move $s7, $t9                # stash elapsed seconds for later checks
+
+    # Count command usage
+    la   $t0, commands_used
+    lw   $t1, 0($t0)
+    addiu $t1, $t1, 1
+    sw   $t1, 0($t0)
 
     # Print "Time +Ns... Natural energy depletion!" if N > 0
     beqz $t9, skip_deplete_print
@@ -201,6 +252,119 @@ surv_cap:
 surv_done:
 skip_survivor_tick:
 
+    # Session total ticks (accumulate elapsed seconds)
+    beqz $t9, skip_total_ticks
+    la   $t8, total_ticks
+    lw   $t7, 0($t8)
+    addu $t7, $t7, $t9
+    sw   $t7, 0($t8)
+skip_total_ticks:
+
+    # Track longest streak above threshold (energy >10)
+    la   $t8, high_streak_cur
+    lw   $t7, 0($t8)
+    li   $t6, HIGH_STREAK_THRESHOLD
+    ble  $s0, $t6, streak_reset
+    beqz $t9, streak_done
+    addu $t7, $t7, $t9
+    sw   $t7, 0($t8)
+    la   $t6, high_streak_max
+    lw   $t5, 0($t6)
+    bge  $t5, $t7, streak_done
+    sw   $t7, 0($t6)
+    j    streak_done
+streak_reset:
+    sw   $zero, 0($t8)
+streak_done:
+
+    # Marathon achievement (survive 300 ticks in one life)
+    beqz $t9, skip_marathon_tick
+    la   $t8, marathon_ticks
+    lw   $t7, 0($t8)
+    la   $t6, ach_flags
+    lw   $t5, 0($t6)
+    andi $t4, $t5, ACH_FLAG_MAR
+    bnez $t4, skip_marathon_tick
+    addu $t7, $t7, $t9        # accumulate actual elapsed seconds
+    sw   $t7, 0($t8)
+    li   $t4, ACH_MARATHON_TICKS
+    blt  $t7, $t4, skip_marathon_tick
+    addiu $s0, $s0, ACH_BONUS_MAR
+    ble  $s0, $s2, marathon_cap
+    move $s0, $s2
+marathon_cap:
+    ori  $t5, $t5, ACH_FLAG_MAR
+    sw   $t5, 0($t6)
+    li   $v0, 4
+    la   $a0, ach_marathon_msg
+    syscall
+skip_marathon_tick:
+
+    # Vigilant achievement (stay above 3 for 40 ticks)
+    beqz $t9, skip_vigil_tick
+    la   $t8, vigil_ticks
+    lw   $t7, 0($t8)
+    la   $t6, ach_flags
+    lw   $t5, 0($t6)
+    andi $t4, $t5, ACH_FLAG_VIGIL
+    bnez $t4, skip_vigil_tick
+    li   $t4, 3
+    ble  $s0, $t4, vigil_reset
+    addu $t7, $t7, $t9        # accumulate actual elapsed seconds this loop
+    sw   $t7, 0($t8)
+    li   $t4, ACH_VIGIL_TICKS
+    blt  $t7, $t4, skip_vigil_tick
+    addiu $s0, $s0, ACH_BONUS
+    ble  $s0, $s2, vigil_cap
+    move $s0, $s2
+vigil_cap:
+    ori  $t5, $t5, ACH_FLAG_VIGIL
+    sw   $t5, 0($t6)
+    li   $v0, 4
+    la   $a0, ach_vigil_msg
+    syscall
+    sw   $zero, 0($t8)
+    j    skip_vigil_tick
+vigil_reset:
+    sw   $zero, 0($t8)
+skip_vigil_tick:
+
+    # Comeback Kid tracking (recover from 1 -> >=10 within 5 ticks)
+    la   $t8, comeback_ticks
+    lw   $t7, 0($t8)            # t7 = ticks since hit 1 (0 = inactive)
+    la   $t6, ach_flags
+    lw   $t5, 0($t6)
+    andi $t4, $t5, ACH_FLAG_COMEBACK
+    bnez $t4, comeback_done     # already unlocked
+
+    # Start window if currently at energy 1 and no active window
+    li   $t4, 1
+    bne  $s0, $t4, comeback_active_check
+    bnez $t7, comeback_active_check
+    li   $t7, 1                 # start counting with this tick
+    sw   $t7, 0($t8)
+
+comeback_active_check:
+    beqz $t7, comeback_done     # not active
+
+    # Advance window only when time progressed
+    beqz $t9, comeback_after_tick
+    addiu $t7, $t7, 1
+    sw   $t7, 0($t8)
+
+comeback_after_tick:
+    # Reset if window exceeded (time progressed) or pet died
+    li   $t4, 5
+    ble  $t7, $t4, comeback_die_check
+comeback_reset:
+    sw   $zero, 0($t8)
+    j    comeback_done
+comeback_die_check:
+    beqz $s0, comeback_reset
+    # else keep waiting within window
+
+comeback_done:
+
     # 1. Show energy bar (Post-depletion state)
     jal energyBar
 
@@ -225,6 +389,10 @@ alive_command_dispatch:
     # If command is 'A', view achievements
     li   $t2, 'A'
     beq  $t0, $t2, do_view_ach
+
+    # If command is 'L', view session stats
+    li   $t2, 'L'
+    beq  $t0, $t2, do_view_stats
 
     # If command is 'P', go to Pet handler
     li   $t2, 'P'
@@ -492,6 +660,35 @@ ign_show_bar:
     j after_command
 
 after_command:
+    # If no time elapsed this loop (e.g., viewing Achievements), skip auto-heal
+    beqz $s7, heal_no_time
+
+    # Comeback Kid success check after command effects
+    la   $t0, comeback_ticks
+    lw   $t1, 0($t0)
+    beqz $t1, comeback_post_done
+    li   $t2, 5
+    bgt  $t1, $t2, comeback_post_reset
+    beqz $s0, comeback_post_reset
+    li   $t2, 10
+    blt  $s0, $t2, comeback_post_done
+    addiu $s0, $s0, ACH_BONUS
+    ble  $s0, $s2, comeback_post_cap
+    move $s0, $s2
+comeback_post_cap:
+    la   $t3, ach_flags
+    lw   $t4, 0($t3)
+    ori  $t4, $t4, ACH_FLAG_COMEBACK
+    sw   $t4, 0($t3)
+    li   $v0, 4
+    la   $a0, ach_comeback_msg
+    syscall
+    sw   $zero, 0($t0)
+    j    comeback_post_done
+comeback_post_reset:
+    sw   $zero, 0($t0)
+comeback_post_done:
+
     # --- Auto-Healing Logic ---
 
     # Auto-heal if energy stays above threshold for consecutive ticks
@@ -518,6 +715,11 @@ after_command:
 heal_cap_done:
     move $t4, $zero             # Reset streak after heal
     li   $t6, 1                 # Set heal flag
+    # Count heal trigger
+    la   $t5, heals_triggered
+    lw   $t4, 0($t5)
+    addiu $t4, $t4, 1
+    sw   $t4, 0($t5)
     j heal_save_only
 
 heal_reset:
@@ -525,6 +727,9 @@ heal_reset:
 
 heal_save_only:
     sw   $t4, 0($t5)            # Save streak back to memory
+    j heal_done
+
+heal_no_time:
     j heal_done
 
 heal_done:
@@ -601,7 +806,7 @@ view_mel_status:
     li  $v0, 4
     la  $a0, ach_unlocked
     syscall
-    j view_done
+    j view_comeback_status
 view_mel_progress:
     la  $t3, mel_hits
     lw  $t4, 0($t3)
@@ -620,7 +825,156 @@ view_mel_progress:
     li  $v0, 4
     la  $a0, ach_units_nl
     syscall
+    j view_comeback_status
+
+view_comeback_status:
+    li  $v0, 4
+    la  $a0, ach_view_comeback
+    syscall
+    andi $t2, $t1, ACH_FLAG_COMEBACK
+    beqz $t2, view_comeback_progress
+    li  $v0, 4
+    la  $a0, ach_unlocked
+    syscall
+    j view_vigil_status
+view_comeback_progress:
+    la  $t3, comeback_ticks
+    lw  $t4, 0($t3)
+    li  $v0, 4
+    la  $a0, ach_progress
+    syscall
+    li  $v0, 1
+    move $a0, $t4
+    syscall
+    li  $v0, 4
+    la  $a0, ach_of
+    syscall
+    li  $v0, 1
+    li  $a0, 5
+    syscall
+    li  $v0, 4
+    la  $a0, ach_units_nl
+    syscall
+    j view_vigil_status
+
+view_vigil_status:
+    li  $v0, 4
+    la  $a0, ach_view_vigil
+    syscall
+    andi $t2, $t1, ACH_FLAG_VIGIL
+    beqz $t2, view_vigil_progress
+    li  $v0, 4
+    la  $a0, ach_unlocked
+    syscall
+    j view_marathon_status
+view_vigil_progress:
+    la  $t3, vigil_ticks
+    lw  $t4, 0($t3)
+    li  $v0, 4
+    la  $a0, ach_progress
+    syscall
+    li  $v0, 1
+    move $a0, $t4
+    syscall
+    li  $v0, 4
+    la  $a0, ach_of
+    syscall
+    li  $v0, 1
+    li  $a0, ACH_VIGIL_TICKS
+    syscall
+    li  $v0, 4
+    la  $a0, ach_units_nl
+    syscall
+    j view_marathon_status
+
+view_marathon_status:
+    li  $v0, 4
+    la  $a0, ach_view_marathon
+    syscall
+    andi $t2, $t1, ACH_FLAG_MAR
+    beqz $t2, view_marathon_progress
+    li  $v0, 4
+    la  $a0, ach_unlocked
+    syscall
+    j view_done
+view_marathon_progress:
+    la  $t3, marathon_ticks
+    lw  $t4, 0($t3)
+    li  $v0, 4
+    la  $a0, ach_progress
+    syscall
+    li  $v0, 1
+    move $a0, $t4
+    syscall
+    li  $v0, 4
+    la  $a0, ach_of
+    syscall
+    li  $v0, 1
+    li  $a0, ACH_MARATHON_TICKS
+    syscall
+    li  $v0, 4
+    la  $a0, ach_units_nl
+    syscall
 view_done:
+    j main_loop
+
+do_view_stats:
+    li  $v0, 4
+    la  $a0, stats_header
+    syscall
+
+    # Total ticks
+    li  $v0, 4
+    la  $a0, stats_ticks
+    syscall
+    la  $t0, total_ticks
+    lw  $t1, 0($t0)
+    li  $v0, 1
+    move $a0, $t1
+    syscall
+    li  $v0, 4
+    la  $a0, ach_units_nl
+    syscall
+
+    # Commands used
+    li  $v0, 4
+    la  $a0, stats_cmds
+    syscall
+    la  $t0, commands_used
+    lw  $t1, 0($t0)
+    li  $v0, 1
+    move $a0, $t1
+    syscall
+    li  $v0, 4
+    la  $a0, ach_units_nl
+    syscall
+
+    # Auto-heals triggered
+    li  $v0, 4
+    la  $a0, stats_heals
+    syscall
+    la  $t0, heals_triggered
+    lw  $t1, 0($t0)
+    li  $v0, 1
+    move $a0, $t1
+    syscall
+    li  $v0, 4
+    la  $a0, ach_units_nl
+    syscall
+
+    # Longest streak above 10
+    li  $v0, 4
+    la  $a0, stats_streak
+    syscall
+    la  $t0, high_streak_max
+    lw  $t1, 0($t0)
+    li  $v0, 1
+    move $a0, $t1
+    syscall
+    li  $v0, 4
+    la  $a0, ach_units_nl
+    syscall
+
     j main_loop
 
 ach_check_mel:
@@ -739,6 +1093,13 @@ gameInit:
     sw  $zero, 0($t0)
     la  $t0, ach_flags
     sw  $zero, 0($t0)
+    la  $t0, comeback_ticks
+    sw  $zero, 0($t0)
+    la  $t0, vigil_ticks
+    sw  $zero, 0($t0)
+    la  $t0, marathon_ticks
+    sw  $zero, 0($t0)
+    move $s7, $zero
 
     li $v0, 0
 	
@@ -836,15 +1197,17 @@ commandParser:
     		move $t1, $v0
     		move $t2, $v1
     		li $t0, 'R'
-    		beq $s0, $t0, CP_noNum
-    		li $t0, 'Q'
-    		beq $s0, $t0, CP_noNum
-    		li $t0, 'A'
-    		beq $s0, $t0, CP_noNum
-    		bnez $t2, CP_error
-    		move $v0, $s0
-    		move $v1, $t1
-    		j CP_return
+        beq $s0, $t0, CP_noNum
+        li $t0, 'Q'
+        beq $s0, $t0, CP_noNum
+        li $t0, 'A'
+        beq $s0, $t0, CP_noNum
+        li $t0, 'L'
+        beq $s0, $t0, CP_noNum
+        bnez $t2, CP_error
+        move $v0, $s0
+        move $v1, $t1
+        j CP_return
     	CP_noNum:
     		li $t3, 1
     		bne $t2, $t3, CP_error
@@ -928,15 +1291,17 @@ parseLetter:
 		beq $t0, $t3, PL_correct
 		li $t3, 'P'
 		beq $t0, $t3, PL_correct
-		li $t3, 'I'
-		beq $t0, $t3, PL_correct
-		li $t3, 'R'
-		beq $t0, $t3, PL_correct
-		li $t3, 'Q'
-		beq $t0, $t3, PL_correct
-		li $t3, 'A'
-		beq $t0, $t3, PL_correct
-		j PL_error
+        li $t3, 'I'
+        beq $t0, $t3, PL_correct
+        li $t3, 'R'
+        beq $t0, $t3, PL_correct
+        li $t3, 'Q'
+        beq $t0, $t3, PL_correct
+        li $t3, 'A'
+        beq $t0, $t3, PL_correct
+        li $t3, 'L'
+        beq $t0, $t3, PL_correct
+        j PL_error
 	PL_correct:
 		move $v0, $t0
 		li $v1, 0
