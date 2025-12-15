@@ -42,7 +42,7 @@ heals_triggered: .word 0
 
 input_buffer: .space BUFFER_SIZE
 
-init_header: .asciiz "=== Digital Pet Simulator (MIPS32) ===\nInitializing system...\n\nPlease set parameters (press Enter for default):\nEnter Natural Energy Depletion Rate (EDR) [Default: 1]: "
+init_header: .asciiz "=== Digital Pet Simulator (MIPS32) ===\nInitializing system...\n\nTip: Press 'A' anytime to view Achievements, 'L' to view Session Stats.\n\nPlease set parameters (press Enter for default):\nEnter Natural Energy Depletion Rate (EDR) [Default: 1]: "
 init_mel: .asciiz "Enter Maximum Energy Level (MEL) [Default: 15]: "
 init_iel: .asciiz "Enter Initial Energy Level (IEL) [Default: 5]: "
 init_success: .asciiz "\nParameters set successfully!\n- EDR: "
@@ -57,7 +57,7 @@ wrong_type_Input_cmd: .asciiz "Invalid input. Follow this format for 'F/E/P/I n'
 status_bar:      .asciiz "[######-----] Energy: "
 slash:           .asciiz "/"
 newline:         .asciiz "\n"
-command_prompt:  .asciiz "Enter a command (F, E, P, I, R, Q, A, L) > "
+command_prompt:  .asciiz "Enter a command (E, P, I, R, Q) > "
 deplete_prefix: .asciiz "\nTime +"
 deplete_suffix: .asciiz "s...  Natural energy depletion!\n"
 feed_recog:    .asciiz "\nCommand recognized: Feed "
