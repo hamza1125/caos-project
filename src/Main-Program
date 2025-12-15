@@ -46,6 +46,9 @@ init_header: .asciiz "=== Digital Pet Simulator (MIPS32) ===\nInitializing syste
 reset_header: .asciiz "\n=== Resetting Simulator ===\nPlease re-set parameters (press Enter for to keep default values):\nEnter Natural Energy Depletion Rate (EDR) [Default: 1]: "
 init_mel: .asciiz "Enter Maximum Energy Level (MEL) [Default: 15]: "
 init_iel: .asciiz "Enter Initial Energy Level (IEL) [Default: 5]: "
+reset_confirm: .asciiz "Reset with current initialisation values? (Y=Keep settings, N=New settings): "
+reset_invalid_msg: .asciiz "Invalid input. Please enter Y or N.\n"
+reset_simple_msg: .asciiz "\nDigital Pet has been reset to its initial state!\n"
 init_success: .asciiz "\nParameters set successfully!\n- EDR: "
 init_success2: .asciiz " units/sec\n- MEL: "
 init_success3: .asciiz " units\n- IEL: "
@@ -113,6 +116,7 @@ stats_streak: .asciiz "- Longest streak above 10 energy (ticks): "
 main:
     # Application Startup & Initial Configuration
     la  $a0, init_header # configures $s1=EDR, $s2=MEL, $s0=current energy, $s3=IEL
+    li  $a1, 0           # 0 = Full Init (Prompts)
     jal gameInit        
 
 main_loop:
@@ -423,10 +427,53 @@ do_reset:
     la  $a0, reset_recog
     syscall
 
-    # Re-initialize the game (EDR, MEL, IEL)
-    la  $a0, reset_header
-    jal gameInit
+    # Ask for Quick Reset
+reset_ask_loop:
+    # Ask for Quick Reset
+    li  $v0, 4
+    la  $a0, reset_confirm
+    syscall
 
+    # Read string (waits for Enter)
+    READ_INPUT (input_buffer, 4)
+    la  $t0, input_buffer
+    lb  $t0, 0($t0)
+    
+    # Print newline for cleanliness
+    li  $v0, 11
+    li  $a0, '\n'
+    syscall
+
+    # Check Y or y
+    li  $t1, 'Y'
+    beq $t0, $t1, reset_quick
+    li  $t1, 'y'
+    beq $t0, $t1, reset_quick
+    
+    # Check N or n
+    li  $t1, 'N'
+    beq $t0, $t1, reset_full
+    li  $t1, 'n'
+    beq $t0, $t1, reset_full
+    
+    # Invalid input
+    li  $v0, 4
+    la  $a0, reset_invalid_msg
+    syscall
+    j   reset_ask_loop
+
+reset_full:
+    # Full Reset
+    la  $a0, reset_header
+    li  $a1, 0
+    jal gameInit
+    j   main_loop
+
+reset_quick:
+    # Quick Reset can just use init header as placeholder or reset header, doesn't print prompts.
+    la  $a0, reset_header
+    li  $a1, 1
+    jal gameInit
     j   main_loop
 
 # Feed, F n: t1 = n, s0 = current energy, s2 = MEL
@@ -1000,6 +1047,9 @@ gameInit:
 	addiu $sp, $sp, -8
 	sw $ra, 4($sp)
 
+    # If $a1 == 1, skip prompts (Quick Reset)
+    bnez $a1, GI_load
+
     # Not needed for first initialisation, but enforces default vallues for future resets
     li $t0, 1
     sw $t0, edr
@@ -1007,7 +1057,7 @@ gameInit:
     sw $t0, mel
     li $t0, 5
     sw $t0, iel
-	
+
 	li $v0, 4
     # $a0 already has header string
 	syscall
@@ -1030,6 +1080,17 @@ gameInit:
 	jal numberToMemory
 	move $s3, $v0
 	move $s0, $v0
+    # Fall through to load registers
+GI_load:
+    lw $s1, edr
+    lw $s2, mel
+    lw $s3, iel
+    move $s0, $s3
+
+    # If Quick Reset ($a1==1), show simple msg
+    li $t0, 1
+    beq $a1, $t0, GI_quick_msg
+
 	li $v0, 4
 	la $a0, init_success
 	syscall
@@ -1051,6 +1112,14 @@ gameInit:
 	li $v0, 4
 	la $a0, init_success4
 	syscall
+    j GI_bar
+
+GI_quick_msg:
+    li $v0, 4
+    la $a0, reset_simple_msg
+    syscall
+
+GI_bar:
 	jal energyBar
 
     li  $v0, 4
