@@ -29,11 +29,21 @@ Generative AI tools were used in this project. Specifically, AI was used for:
    Users can track and unlock achievements:
    - Survivor Achievement: Unlocked by keeping energy strictly above 5 for 60 consecutive ticks.
    - Maxed Out Achievement: Unlocked by hitting the Maximum Energy Level (MEL) twice.
+   - Vigilant Achievement: Unlocked by maintaining energy above 3 for 40 cumulative ticks (seconds).
+   - Comeback Kid Achievement: Unlocked by recovering from Critical Energy (1) to High Energy (10+) within a 5-second window.
+   - Marathon Achievement: Unlocked by surviving for 300 total ticks (seconds) in a single life.
    These achievements can be viewed at any time using the 'A' Command. 
    Importantly, viewing achievements pauses the depletion timer for that specific action (from when the input message is shown to when 'A' is entered), so users aren't punished for checking their achievements. 
    
-
 5. Enhanced Reset Functionality
    Allows the user to re-configure initial parameters mid-game after resetting
    - Logic: When the user selects 'R' (Reset), the game re-runs the initialisation sequence, allowing the user to change the Difficulty (EDR) or Max Energy (MEL) for the next run without restarting the simulator.
    - Implementation: The 'gameInit' function was refactored to accept a dynamic header string argument ('$a0') and to force-reset memory variables to defaults.
+
+6. Session Stats Feature
+   Provides detailed metrics about the current session's performance.
+   - Function: Accessed via the 'L' command, it displays:
+     - Total Ticks Survived: The cumulative number of "active" seconds the pet has been alive (excluding time spent in menus).
+     - Commands Entered: Total number of interactions performed.
+     - Auto-Heals Triggered: Count of how many times the auto-heal bonus was awarded.
+     - Longest High-Energy Streak: The maximum duration (in ticks) the pet stayed above 10 energy.
