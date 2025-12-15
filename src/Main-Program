@@ -43,12 +43,13 @@ heals_triggered: .word 0
 input_buffer: .space BUFFER_SIZE
 
 init_header: .asciiz "=== Digital Pet Simulator (MIPS32) ===\nInitializing system...\n\nTip: Press 'A' anytime to view Achievements, 'L' to view Session Stats.\n\nPlease set parameters (press Enter for default):\nEnter Natural Energy Depletion Rate (EDR) [Default: 1]: "
+reset_header: .asciiz "\n=== Resetting Simulator ===\nPlease re-set parameters (press Enter for to keep default values):\nEnter Natural Energy Depletion Rate (EDR) [Default: 1]: "
 init_mel: .asciiz "Enter Maximum Energy Level (MEL) [Default: 15]: "
 init_iel: .asciiz "Enter Initial Energy Level (IEL) [Default: 5]: "
 init_success: .asciiz "\nParameters set successfully!\n- EDR: "
 init_success2: .asciiz " units/sec\n- MEL: "
 init_success3: .asciiz " units\n- IEL: "
-init_success4: .asciiz " units\n\nYour Digital Pet is alive! Current status:\n"
+init_success4: .asciiz " units\n\nYou can press the key 'A' to view your achievements without time depletion (which resumes after pressing it)!\n\nYour Digital Pet is alive! Current status:\n"
 wrong_type_input_num: .asciiz "Invalid input: Only digits are allowed in this field; Maximum value is a 2-digit number: "
 over_limit_num: .asciiz "The value cannot exceed "
 under_limit_num: .asciiz "The value cannot be less than 1"
@@ -57,7 +58,7 @@ wrong_type_Input_cmd: .asciiz "Invalid input. Follow this format for 'F/E/P/I n'
 status_bar:      .asciiz "[######-----] Energy: "
 slash:           .asciiz "/"
 newline:         .asciiz "\n"
-command_prompt:  .asciiz "Enter a command (E, P, I, R, Q) > "
+command_prompt:  .asciiz "Enter a command (F, E, P, I, R, Q) > "
 deplete_prefix: .asciiz "\nTime +"
 deplete_suffix: .asciiz "s...  Natural energy depletion!\n"
 feed_recog:    .asciiz "\nCommand recognized: Feed "
@@ -110,10 +111,9 @@ stats_streak: .asciiz "- Longest streak above 10 energy (ticks): "
 .text
 .globl main
 main:
-    # (Application Startup & Initial Configuration)
-    jal gameInit        # sets $s1=EDR, $s2=MEL, $s0=current energy, $s3=IEL
-
-    # gameInit already printed initial status bar + command prompt.
+    # Application Startup & Initial Configuration
+    la  $a0, init_header # configures $s1=EDR, $s2=MEL, $s0=current energy, $s3=IEL
+    jal gameInit        
 
 main_loop:
     # Print the command prompt before reading
@@ -128,8 +128,8 @@ main_loop:
 
     jal  commandParser          # v0 = letter, v1 = number or -1
 
-    move $s5, $v0               # s5 = command letter
-    move $s6, $v1               # s6 = number
+    move $s5, $v0               
+    move $s6, $v1               
 
 	# If pet is dead, only allow Reset or Quit
     beqz $s0, dead_command_gate
@@ -139,13 +139,11 @@ main_loop:
     syscall
     move $t8, $a0               # t8 = end_ms (low word)
 
-    # Compute elapsed_seconds = (end - start) / 1000
-    subu $t0, $t8, $s4          # elapsed_ms
+    # Compute elapsed_seconds = EDR*((end - start) / 1000)
+    subu $t0, $t8, $s4          
     li   $t1, 1000
     divu $t0, $t1
-    mflo $t9                    # t9 = elapsed_seconds (N)
-
-    # Calculate depletion = EDR * elapsed_seconds
+    mflo $t9                    
     mul  $t3, $s1, $t9
 
     # If previous loop requested a pause (achievements), zero out elapsed/depletion once
@@ -201,34 +199,32 @@ skip_deplete_print:
     # Check for death
     bgtz $s0, depletion_alive
 
-    # CASE: Pet died from depletion
+    # Pet died from depletion (if above fails)
     move $s0, $zero
     
-    # 1. Print dead_error
+    # 1. Print dead_error, energy bar, banner
     li  $v0, 4
     la  $a0, dead_error
     syscall
     
-    # 2. Print Bar (0/MAX)
     jal energyBar
     
-    # 3. Print Banner
     li  $v0, 4
     la  $a0, dead_banner
     syscall
 
-    # After natural death, just go back to loop to wait for Reset/Quit.
+    # After natural death, go back to loop to wait for Reset/Quit.
     j   main_loop
 
 depletion_alive:
-    # CASE: Pet is valid and alive
+    # Function called if pet is still alive
 
     # Survivor achievement tick (only if time progressed)
     beqz $t9, skip_survivor_tick
     la   $t8, survive_ticks
     lw   $t7, 0($t8)
     ble  $s0, 5, surv_reset
-    addiu $t7, $t7, 1           # count one loop/tick
+    addiu $t7, $t7, 1           
     sw   $t7, 0($t8)
     j surv_check
 surv_reset:
@@ -368,25 +364,21 @@ comeback_done:
     # 1. Show energy bar (Post-depletion state)
     jal energyBar
 
-    # 2. Proceed to command dispatch (Restore command first)
     move $t0, $s5
     move $t1, $s6
 
+#Takes user input and moves to appropriate function from that
 alive_command_dispatch:
 
-    # If command is 'Q', quit the program
     li   $t2, 'Q'
     beq  $t0, $t2, quit_program
 
-    # If command is 'F', go to Feed handler
     li   $t2, 'F'
     beq  $t0, $t2, do_feed
 
-    # If command is 'E', go to Entertain handler
     li   $t2, 'E'
     beq  $t0, $t2, do_entertain
 
-    # If command is 'A', view achievements
     li   $t2, 'A'
     beq  $t0, $t2, do_view_ach
 
@@ -398,11 +390,9 @@ alive_command_dispatch:
     li   $t2, 'P'
     beq  $t0, $t2, do_pet
 
-    # If command is 'I', go to Ignore handler
     li   $t2, 'I'
     beq  $t0, $t2, do_ignore
 
-    # If command is 'R', go to Reset handler
     li   $t2, 'R'
     beq  $t0, $t2, do_reset
 
@@ -420,50 +410,38 @@ dead_command_gate:
     syscall
     j   main_loop
 
-# Reset: R
-# Restores current energy (s0) to the initial energy level (s3)
+# Reset: Restores current energy (s0) to IEL (s3)
 do_reset:
-    # Set current energy back to initial IEL
-    move $s0, $s3
-
     # "\nCommand recognized: Reset.\n"
     li  $v0, 4
     la  $a0, reset_recog
     syscall
 
-    # "Digital Pet has been reset to its initial state!\n"
-    li  $v0, 4
-    la  $a0, reset_msg
-    syscall
+    # Re-initialize the game (EDR, MEL, IEL)
+    la  $a0, reset_header
+    jal gameInit
 
-    # Show status bar with new energy (no natural depletion here)
-    jal energyBar
+    j   main_loop
 
     li  $v0, 4
     la  $a0, newline
     syscall
 
-    # Print the command prompt again
-    # (commandParser now prints the prompt)
-
-    # Go back to main loop (no "Time +1s..." this turn)
     j   main_loop
 
-# Feed: F n
-# t1 = n, s0 = current energy, s2 = MEL
+# Feed, F n: t1 = n, s0 = current energy, s2 = MEL
 do_feed:
-    move $t4, $s0               # remember old energy
-    li   $t6, 0                 # cap flag
-    # Increase energy: s0 = s0 + n
+    # Store old energy and implement a 'boolean' value to $t6
+    move $t4, $s0               
+    li   $t6, 0                 
     addu $s0, $s0, $t1
 
-    # Cap at MEL (max energy)
+    # Cap at MEL if below condition fails!
     ble  $s0, $s2, feed_no_cap
     move $s0, $s2
-    li   $t6, 1                 # capped
+    li   $t6, 1                 
 feed_no_cap:
-    subu $t7, $s0, $t4          # actual increase applied
-
+    subu $t7, $s0, $t4          
     # "\nCommand recognized: Feed n."
     li  $v0, 4
     la  $a0, feed_recog
@@ -477,7 +455,6 @@ feed_no_cap:
     la  $a0, feed_dot_nl
     syscall
 
-    # "Energy increased by n units.\n"
     li  $v0, 4
     la  $a0, feed_inc
     syscall
@@ -502,19 +479,18 @@ feed_show_bar:
     # After feeding, go to natural depletion step
     j after_command
 
-# Entertain: E n
-# t1 = n, s0 = current energy, s2 = MEL
+# Entertain, E n: t1 = n, s0 = current energy, s2 = MEL
 do_entertain:
-    move $t4, $s0               # remember old energy
-    sll  $t5, $t1, 1            # delta = 2 * n
-    li   $t6, 0                 # cap flag
-    addu $s0, $s0, $t5          # apply increase
+    move $t4, $s0               
+    sll  $t5, $t1, 1            
+    li   $t6, 0                 
+    addu $s0, $s0, $t5          
 
     ble  $s0, $s2, ent_no_cap
     move $s0, $s2
-    li   $t6, 1                 # capped
+    li   $t6, 1                 
 ent_no_cap:
-    subu $t7, $s0, $t4          # actual increase
+    subu $t7, $s0, $t4          
 
     li  $v0, 4
     la  $a0, entertain_recog
@@ -550,19 +526,18 @@ ent_show_bar:
     jal energyBar
     j after_command
 
-# Pet: P n
-# t1 = n, s0 = current energy, s2 = MEL
+# Pet, P n: t1 = n, s0 = current energy, s2 = MEL
 do_pet:
-    move $t4, $s0               # remember old energy
-    sll  $t5, $t1, 1            # delta = 2 * n
-    li   $t6, 0                 # cap flag
+    move $t4, $s0               
+    sll  $t5, $t1, 1            
+    li   $t6, 0                 
     addu $s0, $s0, $t5
 
     ble  $s0, $s2, pet_no_cap
     move $s0, $s2
     li   $t6, 1
 pet_no_cap:
-    subu $t7, $s0, $t4          # actual increase
+    subu $t7, $s0, $t4          
 
     li  $v0, 4
     la  $a0, pet_recog
@@ -598,20 +573,19 @@ pet_show_bar:
     jal energyBar
     j after_command
 
-# Ignore: I n
-# t1 = n, s0 = current energy
+# Ignore, I n: t1 = n, s0 = current energy
 do_ignore:
     move $t4, $s0               # remember old energy
-    li   $t6, 0                 # death flag
-    sll  $t5, $t1, 1            # delta = 2 * n
-    addu $t5, $t5, $t1          # delta = 3 * n
-    subu $s0, $s0, $t5          # apply decrease
+    li   $t6, 0                 # 'boolean' for if pet died
+    sll  $t5, $t1, 1            
+    addu $t5, $t5, $t1          # 2n + n = 3n
+    subu $s0, $s0, $t5          
 
     bgtz $s0, ign_no_death
     move $s0, $zero
-    li   $t6, 1                 # dead
+    li   $t6, 1                 
 ign_no_death:
-    subu $t7, $t4, $s0          # actual decrease
+    subu $t7, $t4, $s0          
 
     li  $v0, 4
     la  $a0, ignore_recog
@@ -630,7 +604,7 @@ ign_no_death:
     syscall
 
     li  $v0, 1
-    move $a0, $t7               # actual decrease
+    move $a0, $t7               
     syscall
 
     li  $v0, 4
@@ -642,7 +616,7 @@ ign_no_death:
     syscall
 
     li  $v0, 1
-    move $a0, $t1               # n
+    move $a0, $t1               
     syscall
 
     li  $v0, 4
@@ -690,25 +664,22 @@ comeback_post_reset:
 comeback_post_done:
 
     # --- Auto-Healing Logic ---
-
     # Auto-heal if energy stays above threshold for consecutive ticks
-    move $t6, $zero             # heal flag
+    move $t6, $zero             
     
-    # Load streak counter from memory
+    # t4 = streak count
     la   $t5, heal_counter
-    lw   $t4, 0($t5)            # t4 = streak count
+    lw   $t4, 0($t5)            
 
     beqz $s0, heal_reset
     li  $t8, HEAL_THRESHOLD
     blt $s0, $t8, heal_reset
     
-    # Increment streak
     addiu $t4, $t4, 1
     
     li  $t9, HEAL_TICKS
     blt $t4, $t9, heal_save_only
 
-    # Trigger Heal
     addiu $s0, $s0, 1
     ble  $s0, $s2, heal_cap_done
     move $s0, $s2
@@ -723,10 +694,10 @@ heal_cap_done:
     j heal_save_only
 
 heal_reset:
-    move $t4, $zero             # Reset streak if threshold not met
+    move $t4, $zero             
 
 heal_save_only:
-    sw   $t4, 0($t5)            # Save streak back to memory
+    sw   $t4, 0($t5)            
     j heal_done
 
 heal_no_time:
@@ -737,15 +708,12 @@ heal_done:
     li  $v0, 4
     la  $a0, auto_heal_msg
     syscall
-skip_heal_msg:
-
-    # (Status bar is printed by command handlers, so we skip it here)
- 
+skip_heal_msg: 
     li  $v0, 4
     la  $a0, newline
     syscall
 
-    # Low energy warning (only if alive and at/below threshold)
+    # Low energy warning
     beqz $s0, skip_warning
     ble  $s0, LOW_ENERGY_THRESHOLD, show_warning
     j skip_warning
@@ -758,7 +726,6 @@ skip_warning:
     # If pet died from natural depletion, show death banner and prompt
     beqz $s0, pet_dead_flow
 
-    # Loop back to wait for the next command
     j   main_loop
 
 do_view_ach:
@@ -766,7 +733,6 @@ do_view_ach:
     la  $a0, ach_view_header
     syscall
 
-    # Survivor status
     li  $v0, 4
     la  $a0, ach_view_surv
     syscall
@@ -978,7 +944,6 @@ do_view_stats:
     j main_loop
 
 ach_check_mel:
-    # Count reaching MEL from below; award on second time
     bge  $t4, $s2, ach_mel_done
     bne  $s0, $s2, ach_mel_done
     la   $t8, mel_hits
@@ -1010,12 +975,10 @@ quit_program:
     la  $a0, quit_recog
     syscall
 
-    # Saving session... goodbye!
     li  $v0, 4
     la  $a0, quit_save
     syscall
 
-    # --- simulation terminated ---
     li  $v0, 4
     la  $a0, quit_end
     syscall
@@ -1023,7 +986,7 @@ quit_program:
     li  $v0, 10
     syscall
 
-# Shared death flow: show banner and prompt for reset/quit
+# Banner for dead pet
 pet_dead_flow:
     li  $v0, 4
     la  $a0, dead_banner
@@ -1034,9 +997,17 @@ pet_dead_flow:
 gameInit:
 	addiu $sp, $sp, -8
 	sw $ra, 4($sp)
+
+    # Not needed for first initialisation, but enforces default vallues for future resets
+    li $t0, 1
+    sw $t0, edr
+    li $t0, 15
+    sw $t0, mel
+    li $t0, 5
+    sw $t0, iel
 	
 	li $v0, 4
-	la $a0, init_header
+    # $a0 already has header string
 	syscall
 	la $a0, edr
 	li $a1, -1
@@ -1084,7 +1055,7 @@ gameInit:
     la  $a0, newline
     syscall
 
-    move $s4, $zero          # unused saved slot
+    move $s4, $zero          
     la  $t0, heal_counter
     sw  $zero, 0($t0)
     la  $t0, survive_ticks
@@ -1106,9 +1077,8 @@ gameInit:
 	lw $ra, 4($sp)
 	addiu $sp, $sp, 8
 	jr $ra
-#input of a0 = variable memory address, a1 max allowed value
-#output v0 as the final variable value, v1 as a flag if the variable was updated
-#reruns on the unsuccessful input
+
+
 numberToMemory:
 	addiu $sp, $sp, -16
 	sw $ra, 12($sp)
